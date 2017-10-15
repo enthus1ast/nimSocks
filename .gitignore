@@ -3,3 +3,5 @@ blacklistFancy.txt
 blacklistFancy
 hosts.txt
 server
+client
+types

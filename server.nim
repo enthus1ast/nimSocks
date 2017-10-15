@@ -158,24 +158,13 @@ proc handleSocks5Connect(
 proc processClient(proxy: SocksServer, client: AsyncSocket): Future[void] {.async.} =
   # Handshake/Authentication
   var reqMessageSelection = RequestMessageSelection()
-
-  reqMessageSelection.version = await client.recvByte
-  if reqMessageSelection.version != SOCKS_V5: 
-    dbg "not supported version: ", reqMessageSelection.version
-    client.close()
-    return
-
-  reqMessageSelection.methodsLen = await client.recvByte
-  if reqMessageSelection.methodsLen < 1: 
-    dbg "err: ", reqMessageSelection.methodsLen
+  if (await client.recvRequestMessageSel(reqMessageSelection)) == false:
+    dbg "could not parse RequestMessageSelection: ", reqMessageSelection.version
     client.close()
     return
 
   var respMessageSelection = ResponseMessageSelection()
-  respMessageSelection.version = SOCKS_V5
-
-  reqMessageSelection.methods = await client.recvBytes(reqMessageSelection.methodsLen.int)
-  dbg repr reqMessageSelection
+  respMessageSelection.version = reqMessageSelection.version
 
   # Check if authentication method is supported and allowed by server
   if not (reqMessageSelection.methods in proxy.allowedAuthMethods):
@@ -191,7 +180,7 @@ proc processClient(proxy: SocksServer, client: AsyncSocket): Future[void] {.asyn
     await client.send($respMessageSelection)
 
     var socksUserPasswordReq = SocksUserPasswordRequest()
-    if (await client.parseSocksUserPasswordReq(socksUserPasswordReq)) == false:
+    if (await client.recvSocksUserPasswordReq(socksUserPasswordReq)) == false:
       client.close()
       return
 
@@ -216,30 +205,12 @@ proc processClient(proxy: SocksServer, client: AsyncSocket): Future[void] {.asyn
     client.close()
     return
 
-
-    # NO_AUTHENTICATION_REQUIRED
-    # GSSAPI = 0x01.byte
-    # USERNAME_PASSWORD = 0x02.byte
-    # # to X'7F' IANA ASSIGNED = 0x03
-    # # to X'FE' RESERVED FOR PRIVATE METHODS = 0x80
-    # NO_ACCEPTABLE_METHODS = 0xFF.byte 
-
-
-
-
   # client sends what we should do
   var socksReq = SocksRequest()
-  socksReq.version = await client.recvByte
-  socksReq.cmd = await client.recvByte
-  socksReq.rsv = await client.recvByte
-  socksReq.atyp = await client.recvByte
-  socksReq.dst_addr = case socksReq.atyp.ATYP
-    of IP_V4_ADDRESS: await client.recvBytes(4)
-    of DOMAINNAME: await client.recvBytes((await client.recvByte).int)
-    of IP_V6_ADDRESS: await client.recvBytes(16)
-  socksReq.dst_port = (await client.recvByte, await client.recvByte) # *: tuple[h: byte, l: byte]
-  # dbg "Dest Data: ", socksReq
-  # dbg "Port: ", socksReq.dst_port.port()
+  if (await client.recvSocksReq(socksReq)) == false:
+    dbg "Could not parse socksReq"
+    client.close()
+    return
 
   var
     remoteSocket: AsyncSocket = nil
@@ -295,7 +266,7 @@ proc serve(proxy: SocksServer): Future[void] {.async.} =
 
 when isMainModule:
   var proxy = newSocksServer()
-  proxy.allowedAuthMethods = {NO_AUTHENTICATION_REQUIRED ,USERNAME_PASSWORD}
+  proxy.allowedAuthMethods = {USERNAME_PASSWORD}
   proxy.addUser("hans", "peter")
 
   block:

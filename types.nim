@@ -1,12 +1,13 @@
-import net, asyncnet, asyncdispatch
+import net, asyncnet, asyncdispatch, strutils
 
 const
-  SOCKS_V4* = 0x04.byte # same as 4a
-  SOCKS_V5* = 0x05.byte
   DEFAULT_PORT* = 1080
 
 type
-  RequestMessageSelection* = object
+  SOCKS_VERSION* = enum
+    # SOCKS_V4 = 0x04.byte # same as 4a
+    SOCKS_V5 = 0x05.byte
+  RequestMessageSelection* = ref object
     version*: byte
     methodsLen*: byte
     methods*: seq[byte]
@@ -42,7 +43,7 @@ type
    COMMAND_NOT_SUPPORTED = 0x07.byte 
    ADDRESS_TYPE_NOT_SUPPORTED = 0x08.byte 
    # to X'FF' unassigned = 0x09.byte
-  SocksRequest* = object
+  SocksRequest* = ref object
     version*: byte
     cmd*: byte
     rsv*: byte
@@ -65,13 +66,6 @@ type
   SocksUserPasswordResponse* = object
    authVersion*: byte
    status*: byte
-
-proc newSocksResponse*(socksRequest: SocksRequest, rep: REP): SocksResponse =
-  result = SocksResponse()
-  result.version = socksRequest.version
-  result.rep = rep.byte
-  result.rsv = 0x00.byte
-  result.atyp = socksRequest.atyp
 
 proc `$`*(obj: ResponseMessageSelection): string =
   result = ""
@@ -104,6 +98,29 @@ proc toSeq*(str: string): seq[byte] =
   result = @[]
   for ch in str:
     result.add ch.byte
+
+proc toSeq*(obj: set[AuthenticationMethod]): seq[byte] =
+  result = @[]
+  for ch in obj:
+    result.add ch.byte
+
+proc newSocksResponse*(socksRequest: SocksRequest, rep: REP): SocksResponse =
+  result = SocksResponse()
+  result.version = socksRequest.version
+  result.rep = rep.byte
+  result.rsv = 0x00.byte
+  result.atyp = socksRequest.atyp
+
+proc newRequestMessageSelection*(version: SOCKS_VERSION, methods: set[AuthenticationMethod]): RequestMessageSelection =
+  result = RequestMessageSelection()
+  result.version = version.byte
+  result.methodsLen = methods.toSeq().len.byte
+  result.methods = methods.toSeq()
+
+proc newResponseMessageSelection*(version: SOCKS_VERSION, selectedMethod: AuthenticationMethod): ResponseMessageSelection =
+  result = ResponseMessageSelection()
+  result.version = version.byte
+  result.selectedMethod = selectedMethod.byte
 
 proc parseDestAddress*(bytes: seq[byte], atyp: ATYP): string =
   result = ""
@@ -148,7 +165,7 @@ proc `in`*(bytesMethod: seq[byte], authMethods: set[AuthenticationMethod]): bool
     if byteMethod.AuthenticationMethod in authMethods: return true
   return false
 
-proc parseSocksUserPasswordReq*(client:AsyncSocket, obj: SocksUserPasswordRequest): Future[bool] {.async.} =
+proc recvSocksUserPasswordReq*(client:AsyncSocket, obj: SocksUserPasswordRequest): Future[bool] {.async.} =
   obj.authVersion = await client.recvByte
   if obj.authVersion != 0x01.byte: return false
 
@@ -166,5 +183,52 @@ proc parseSocksUserPasswordReq*(client:AsyncSocket, obj: SocksUserPasswordReques
 
   return true
 
-# proc `in`*(authMethod: AuthenticationMethod, bytesMethod: seq[byte]): bool =
-#   return authMethod.byte in bytesMethod
+# proc `in`*(bt: byte, obj: SOCKS_VERSION): bool =
+#   for en in obj:
+#     echo en
+proc parseEnum[T](bt: byte): T =
+  for elem in T:
+    if bt.T == elem: 
+      return bt.T
+  raise newException(ValueError, "invalid byte")
+
+proc inEnum[T](bt: byte): bool =
+  try:
+    discard parseEnum[T](bt)
+    return true
+  except:
+    return false
+
+proc recvSocksReq*(client:AsyncSocket, obj: SocksRequest): Future[bool] {.async.} =
+  obj.version = await client.recvByte
+  if not inEnum[SOCKS_VERSION](obj.version): return false
+
+  obj.cmd = await client.recvByte
+  if not inEnum[SocksCmd](obj.cmd): return false
+
+  obj.rsv = await client.recvByte 
+  if obj.rsv != 0x00.byte: return false
+
+  obj.atyp = await client.recvByte
+  if not inEnum[ATYP](obj.atyp): return false
+
+  obj.dst_addr = case obj.atyp.ATYP
+    of IP_V4_ADDRESS: await client.recvBytes(4)
+    of DOMAINNAME: await client.recvBytes((await client.recvByte).int)
+    of IP_V6_ADDRESS: await client.recvBytes(16)
+  
+  obj.dst_port = (await client.recvByte, await client.recvByte) # *: tuple[h: byte, l: byte]
+
+  return true
+
+
+proc recvRequestMessageSel*(client:AsyncSocket, obj: RequestMessageSelection): Future[bool] {.async.} =
+  obj.version = await client.recvByte
+  if not inEnum[SOCKS_VERSION](obj.version):  return false
+
+  obj.methodsLen = await client.recvByte
+  if obj.methodsLen < 1: return false
+
+  obj.methods = await client.recvBytes(obj.methodsLen.int)
+
+  return true
