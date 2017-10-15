@@ -22,15 +22,15 @@ proc matched*(bentry: BlacklistEntry, str: string): bool =
   of CON: str.contains(bentry.line)
   of EQL: str == bentry.line
 
-proc loadString*(str: string): seq[BlacklistEntry] =
+proc loadListFromStr*(str: string): seq[BlacklistEntry] =
   result = @[]
   for ln in str.splitLines():
     if ln.strip().len == 0: continue
     if ln.strip().startsWith('#'): continue
     result.add parseBlacklistLine(ln)
 
-proc loadFile*(path: string): seq[BlacklistEntry] =
-  return loadString(readFile(path))
+proc loadListFancy*(path: string): seq[BlacklistEntry] =
+  return loadListFromStr(readFile(path))
 
 proc isListed*(bentries: seq[BlacklistEntry], host: string): bool =
   for bentry in bentries:
@@ -43,6 +43,6 @@ when isMainModule:
   assert parseBlacklistLine("end porn.com").matched("geiletitten.mira.porn.com") == true
   # assert parseBlacklistLine("# sta  foo")  == (REM, "sta  foo")
 
-  var blackList = loadFile("blacklistFancy.txt")
+  var blackList = loadListFancy("blacklistFancy.txt")
   for bentry in blackList:
     echo $bentry, " | LISTED => ", bentry.matched("geiletitten.mira.porn.com")

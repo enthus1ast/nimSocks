@@ -4,6 +4,7 @@ import dbg
 import tables
 import strutils
 import blacklistFancy # important, do not delete!!! : )
+import nimSHA2
 
 const
   SIZE = 1024 ## max size the buffer could be
@@ -20,8 +21,14 @@ type SocksServer = object
   serverSocket: AsyncSocket
   staticHosts: Table[string, string]
   logFile: File
+  users: TableRef[string, SHA512Digest]
+  allowedAuthMethods: set[AuthenticationMethod]
 
-proc newSocksServer(listenPort: Port = Port(DEFAULT_PORT), listenHost: string = ""): SocksServer =
+proc newSocksServer(
+  listenPort: Port = Port(DEFAULT_PORT),
+  listenHost: string = "",
+  allowedAuthMethods: set[AuthenticationMethod] = {USERNAME_PASSWORD}
+): SocksServer =
   result = SocksServer()
   result.listenPort = listenPort
   result.listenHost = listenHost
@@ -31,76 +38,49 @@ proc newSocksServer(listenPort: Port = Port(DEFAULT_PORT), listenHost: string = 
   result.serverSocket = newAsyncSocket()
   result.staticHosts = initTable[string, string]()
   result.logFile = open("hosts.txt", fmWrite)
+  result.users = newTable[string, SHA512Digest]()
+  result.allowedAuthMethods = allowedAuthMethods
 
-proc toSeq(str: string): seq[byte] = 
-  result = @[]
-  for ch in str:
-    result.add ch.byte
+proc isBlacklisted(proxy: SocksServer, host: string): bool =
+  return host in proxy.blacklistHost or proxy.blacklistHostFancy.isListed(host)
 
-proc `$`(rms: ResponseMessageSelection): string =
-  result = ""
-  result.add rms.version.char
-  result.add rms.selectedMethod.char
+proc isWhitelisted(proxy: SocksServer, host: string): bool =
+  return host in proxy.whitelistHost
 
-proc `$`(sr: SocksResponse): string =
-  result = ""
-  result.add sr.version.char
-  result.add sr.rep.char
-  result.add sr.rsv.char
-  result.add sr.atyp.char
-  # if sr.atyp.ATYP == DOMAINNAME:
-  #   result.add sr.bnd_addr.len.char
-  result.add $sr.bnd_addr
-  result.add sr.bnd_port.h.char
-  result.add sr.bnd_port.l.char
+proc authenticate(proxy: SocksServer, username, password: string): bool =
+  result = false
+  echo "username: ", username
+  echo "password: ", password
+  if username.len == 0: return
+  if password.len == 0: return
+  if not proxy.users.hasKey(username): return false
 
-proc parseDestAddress(bytes: seq[byte], atyp: ATYP): string =
-  result = ""
-  for idx, ch in bytes:
-    case atyp
-    of DOMAINNAME:
-      result.add(ch.chr())
-    of IP_V4_ADDRESS: 
-      result.add($ch)
-      if idx != 3: result.add('.')
-    of IP_V6_ADDRESS:
-      result.add($ch)
-      if idx != 15: result.add(':')
+  var
+    hashedPassword = initSHA[SHA512]()
+    hashFromDb = proxy.users[username]
+  
+  hashedPassword.update(username)
+  hashedPassword.update(password)
 
-proc port(t: tuple[h, l: byte]): Port =
-  return Port(t.h.int * 256 + t.l.int)
+  echo "hashedPassword: ", hashedPassword
+  echo "hashFromDb: ", hashFromDb
 
-proc unPort(p: Port): tuple[h, l: byte] =
-  return ((p.int div 256).byte, (p.int mod 256).byte) 
+  if hashedPassword.final() == hashFromDb:
+    result = true
 
-proc recvByte(client: AsyncSocket): Future[byte] {.async.} =
-  return (await client.recv(1))[0].byte
+proc addUser(proxy: SocksServer, username: string, password: string) =
+  if proxy.users.hasKey(username): raise newException(ValueError, "User already exists.")
+  if username.len == 0: raise newException(ValueError, "Username required.")
+  if password.len == 0: raise newException(ValueError, "Password required.")
 
-proc recvBytes(client: AsyncSocket, count: int): Future[seq[byte]] {.async.} =
-  return (await client.recv(count)).toSeq()
+  var hashedPassword = initSHA[SHA512]()
+  hashedPassword.update(username)
+  hashedPassword.update(password)
 
-proc toBytes(str: string): seq[byte] =
-  result = @[]
-  for ch in str:
-    result.add ch.byte
+  proxy.users.add(username, hashedPassword.final())
 
-proc recvCString(client: AsyncSocket): Future[seq[byte]] {.async.} =
-  result = @[]
-  var ch: byte
-  while true:
-    ch = await client.recvByte
-    if ch == 0x00.byte: break
-    result.add(ch.byte)
 
 proc pump(s1, s2: AsyncSocket): Future[void] {.async.} =
-  # var buf = ""
-  # while true:
-  #   buf = await s1.recv(1)
-  #   # echo buf
-  #   if buf == "": break
-  #   await s2.send(buf)
-  #   buf.setLen 0
-
   while true:
     var buffer: string
     try:
@@ -130,15 +110,53 @@ proc pump(s1, s2: AsyncSocket): Future[void] {.async.} =
       # write(stdout, buffer)
       await s2.send(buffer)
 
-proc isBlacklisted(proxy: SocksServer, host: string): bool =
-  return host in proxy.blacklistHost or proxy.blacklistHostFancy.isListed(host)
+proc handleSocks5Connect(
+  proxy: SocksServer,
+  client: AsyncSocket,
+  socksReq: SocksRequest
+): Future[(bool, AsyncSocket)] {.async.} =
+  var
+    host = socksReq.dst_addr.parseDestAddress(socksReq.atyp.ATYP)
+    remoteSocket: AsyncSocket
+  dbg "host: ", host
 
-proc isWhitelisted(proxy: SocksServer, host: string): bool =
-  return host in proxy.whitelistHost
+  if proxy.staticHosts.contains host:
+    host = proxy.staticHosts[host]
+  elif proxy.whitelistHost.len == 0:
+    if proxy.isBlacklisted(host):
+      var socksResp = newSocksResponse(socksReq, CONNECTION_NOT_ALLOWED_BY_RULESET)
+      await client.send($socksResp)
+      echo "Blacklisted host:", host
+      return (false, nil)
+  else:
+    if not proxy.isWhitelisted(host):
+      var socksResp = newSocksResponse(socksReq, CONNECTION_NOT_ALLOWED_BY_RULESET)
+      await client.send($socksResp)
+      echo "Not whitelisted host:", host
+      return (false, nil)
+
+  proxy.logFile.writeLine(host)
+  proxy.logFile.flushFile()
+
+  var connectSuccess = true
+  try:
+    remoteSocket =  await asyncnet.dial(host, socksReq.dst_port.port())
+    # should load data but not deliver to client (e.g. some anoying ads)
+    # if host.contains("adition.com"):
+    #   connectSuccess = false
+  except:
+    connectSuccess = false
+
+  if not connectSuccess:
+    var socksResp = newSocksResponse(socksReq, HOST_UNREACHABLE)
+    await client.send($socksResp)
+    echo "HOST_UNREACHABLE:", host        
+    return (false, nil)
+
+  return (true, remoteSocket)
 
 proc processClient(proxy: SocksServer, client: AsyncSocket): Future[void] {.async.} =
   # Handshake/Authentication
-
   var reqMessageSelection = RequestMessageSelection()
 
   reqMessageSelection.version = await client.recvByte
@@ -157,22 +175,64 @@ proc processClient(proxy: SocksServer, client: AsyncSocket): Future[void] {.asyn
   respMessageSelection.version = SOCKS_V5
 
   reqMessageSelection.methods = await client.recvBytes(reqMessageSelection.methodsLen.int)
-  dbg reqMessageSelection
-  if not NO_AUTHENTICATION_REQUIRED.byte in reqMessageSelection.methods: 
+  dbg repr reqMessageSelection
+
+  # Check if authentication method is supported and allowed by server
+  if not (reqMessageSelection.methods in proxy.allowedAuthMethods):
     respMessageSelection.selectedMethod = NO_ACCEPTABLE_METHODS.byte
     await client.send($respMessageSelection)
     client.close()
     return
 
-  respMessageSelection.selectedMethod = NO_AUTHENTICATION_REQUIRED.byte
-  await client.send($respMessageSelection)
+  # Chose authentication methods
+  if USERNAME_PASSWORD.byte in reqMessageSelection.methods:
+    dbg "Got user password Authentication"
+    respMessageSelection.selectedMethod = USERNAME_PASSWORD.byte
+    await client.send($respMessageSelection)
+
+    var socksUserPasswordReq = SocksUserPasswordRequest()
+    if (await client.parseSocksUserPasswordReq(socksUserPasswordReq)) == false:
+      client.close()
+      return
+
+    var socksUserPasswordResp = SocksUserPasswordResponse()
+    socksUserPasswordResp.authVersion = 0x01
+    if proxy.authenticate($socksUserPasswordReq.uname, $socksUserPasswordReq.passwd):
+      socksUserPasswordResp.status = UserPasswordStatus.SUCCEEDED.byte
+      dbg "Sending good: ", repr($socksUserPasswordResp)
+      await client.send($socksUserPasswordResp)
+    else:
+      socksUserPasswordResp.status = UserPasswordStatus.FAILED.byte
+      dbg "Sending bad: ", repr($socksUserPasswordResp)
+      await client.send($socksUserPasswordResp)
+      client.close()
+      return
+    
+  elif NO_AUTHENTICATION_REQUIRED.byte in reqMessageSelection.methods:
+    respMessageSelection.selectedMethod = NO_AUTHENTICATION_REQUIRED.byte
+    await client.send($respMessageSelection)
+  else:
+    dbg "Not supported authentication method"
+    client.close()
+    return
+
+
+    # NO_AUTHENTICATION_REQUIRED
+    # GSSAPI = 0x01.byte
+    # USERNAME_PASSWORD = 0x02.byte
+    # # to X'7F' IANA ASSIGNED = 0x03
+    # # to X'FE' RESERVED FOR PRIVATE METHODS = 0x80
+    # NO_ACCEPTABLE_METHODS = 0xFF.byte 
+
+
+
 
   # client sends what we should do
   var socksReq = SocksRequest()
-  socksReq.version = await client.recvByte # *: byte
-  socksReq.cmd = await client.recvByte # *: byte
-  socksReq.rsv = await client.recvByte # *: byte
-  socksReq.atyp = await client.recvByte # *: byte
+  socksReq.version = await client.recvByte
+  socksReq.cmd = await client.recvByte
+  socksReq.rsv = await client.recvByte
+  socksReq.atyp = await client.recvByte
   socksReq.dst_addr = case socksReq.atyp.ATYP
     of IP_V4_ADDRESS: await client.recvBytes(4)
     of DOMAINNAME: await client.recvBytes((await client.recvByte).int)
@@ -181,46 +241,12 @@ proc processClient(proxy: SocksServer, client: AsyncSocket): Future[void] {.asyn
   # dbg "Dest Data: ", socksReq
   # dbg "Port: ", socksReq.dst_port.port()
 
-  var remoteSocket: AsyncSocket
+  var
+    remoteSocket: AsyncSocket = nil
+    handleCmdSucceed: bool = false
   case socksReq.cmd.SocksCmd:
     of CONNECT:
-      var host = socksReq.dst_addr.parseDestAddress(socksReq.atyp.ATYP)
-      dbg "host: ", host
-
-      if proxy.staticHosts.contains host:
-        host = proxy.staticHosts[host]
-      elif proxy.whitelistHost.len == 0:
-        if proxy.isBlacklisted(host):
-          var socksResp = newSocksResponse(socksReq, CONNECTION_NOT_ALLOWED_BY_RULESET)
-          await client.send($socksResp)
-          echo "Blacklisted host:", host
-          return
-      else:
-        if not proxy.isWhitelisted(host):
-          var socksResp = newSocksResponse(socksReq, CONNECTION_NOT_ALLOWED_BY_RULESET)
-          await client.send($socksResp)
-          echo "Not whitelisted host:", host
-          return
-
-      proxy.logFile.writeLine(host)
-      proxy.logFile.flushFile()
-
-      var connectSuccess = true
-      try:
-        remoteSocket =  await asyncnet.dial(host, socksReq.dst_port.port())
-        # if host.contains("adition.com"):
-        #   connectSuccess = false
-      except:
-        connectSuccess = false
-
-      if not connectSuccess:
-        var socksResp = newSocksResponse(socksReq, HOST_UNREACHABLE)
-        await client.send($socksResp)
-        echo "HOST_UNREACHABLE:", host        
-        return
-
-
-
+      (handleCmdSucceed, remoteSocket) = await proxy.handleSocks5Connect(client, socksReq)
     of BIND:
       echo "not implemented"
     of UDP_ASSOCIATE:
@@ -229,12 +255,12 @@ proc processClient(proxy: SocksServer, client: AsyncSocket): Future[void] {.asyn
       echo "not implemented"
       return
 
-  # if socksResp.atyp.ATYP == DOMAINNAME:
-  #   socksResp.bnd_addr = @[]
-  #   socksResp.bnd_addr.add socksReq.dst_addr.len.byte
-  #   socksResp.bnd_addr &= socksReq.dst_addr
-  # else:
-  #   socksResp.bnd_addr = socksReq.dst_addr
+  if handleCmdSucceed == false:
+    dbg "Handling command: failed"
+    client.close()
+    return
+  dbg "Handling command: succeed"
+
   var
     socksResp = newSocksResponse(socksReq, SUCCEEDED)
     (hst, prt) = remoteSocket.getFd.getLocalAddr(AF_INET)
@@ -244,15 +270,8 @@ proc processClient(proxy: SocksServer, client: AsyncSocket): Future[void] {.asyn
   echo repr socksResp
   await client.send($socksResp)
 
-
   asyncCheck pump(remoteSocket, client)
   asyncCheck pump(client, remoteSocket)
-  # After client is authenticated:
-  # while true:
-  #   echo $(await remoteSocket.recvByte)
-    # if line.len == 0: break
-    # for c in clients:
-    #   await c.send(line & "\c\L")
 
 proc loadList(path: string): seq[string] =
   result = @[]
@@ -263,7 +282,6 @@ proc loadList(path: string): seq[string] =
     result.add lineBuf
 
 proc serve(proxy: SocksServer): Future[void] {.async.} =
-  # proxy.serverSocket = newAsyncSocket()
   proxy.serverSocket.setSockOpt(OptReuseAddr, true)
   proxy.serverSocket.bindAddr(proxy.listenPort, proxy.listenHost)
   proxy.serverSocket.listen()
@@ -274,10 +292,21 @@ proc serve(proxy: SocksServer): Future[void] {.async.} =
     echo "connection from: ", address
     asyncCheck proxy.processClient(client)
 
+
 when isMainModule:
   var proxy = newSocksServer()
+  proxy.allowedAuthMethods = {NO_AUTHENTICATION_REQUIRED ,USERNAME_PASSWORD}
+  proxy.addUser("hans", "peter")
+
+  block:
+    assert proxy.authenticate("hans", "peter") == true
+    assert proxy.authenticate(" hans", "peter") == false
+    assert proxy.authenticate("hans", "peter ") == false
+    assert proxy.authenticate(" hans", "peter ") == false
+    assert proxy.authenticate("as hans", "dd cpeter ") == false
+
   # proxy.blacklistHost = loadList("blacklist.txt")
-  proxy.blacklistHostFancy = loadFile("blacklistFancy.txt")
+  proxy.blacklistHostFancy = loadListFancy("blacklistFancy.txt")
   # proxy.whitelistHost = @[
   #   "ch4t.code0.xyz"
   # ]
