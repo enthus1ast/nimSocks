@@ -11,7 +11,7 @@ type
     version*: byte
     methodsLen*: byte
     methods*: seq[byte]
-  ResponseMessageSelection* = object
+  ResponseMessageSelection* = ref object
     version*: byte
     selectedMethod*: byte
   AuthenticationMethod* = enum
@@ -50,7 +50,7 @@ type
     atyp*: byte
     dst_addr*: seq[byte]
     dst_port*: tuple[h: byte, l: byte]
-  SocksResponse* = object
+  SocksResponse* = ref object
     version*: byte
     rep*: byte
     rsv*: byte
@@ -63,7 +63,7 @@ type
     uname*: seq[byte]
     plen*: byte
     passwd*: seq[byte]
-  SocksUserPasswordResponse* = object
+  SocksUserPasswordResponse* = ref object
    authVersion*: byte
    status*: byte
 
@@ -84,15 +84,33 @@ proc `$`*(obj: SocksResponse): string =
   result.add obj.bnd_port.h.char
   result.add obj.bnd_port.l.char
 
+proc `$`*(obj: seq[byte]): string =
+  result = ""
+  for ch in obj:
+    result.add ch.char
+
+proc `$`*(obj: SocksRequest): string =
+  result = ""
+  result.add obj.version.char 
+  result.add obj.cmd.char 
+  result.add obj.rsv.char 
+  result.add obj.atyp.char 
+  result.add $obj.dst_addr
+  result.add obj.dst_port.h.char
+  result.add obj.dst_port.l.char
+
 proc `$`*(obj: SocksUserPasswordResponse): string =
   result = ""
   result.add obj.authVersion.char
   result.add obj.status.char
 
-proc `$`*(obj: seq[byte]): string =
+
+
+proc `$`*(obj: RequestMessageSelection): string =
   result = ""
-  for ch in obj:
-    result.add ch.char
+  result.add obj.version.char
+  result.add obj.methodsLen.char
+  result.add $obj.methods
 
 proc toSeq*(str: string): seq[byte] = 
   result = @[]
@@ -103,6 +121,57 @@ proc toSeq*(obj: set[AuthenticationMethod]): seq[byte] =
   result = @[]
   for ch in obj:
     result.add ch.byte
+
+proc port*(t: tuple[h, l: byte]): Port =
+  return Port(t.h.int * 256 + t.l.int)
+
+proc unPort*(p: Port): tuple[h, l: byte] =
+  return ((p.int div 256).byte, (p.int mod 256).byte)
+
+
+proc encodeIpv4(address: string): seq[byte] = 
+  result = @[]
+  var octs = address.split(".")
+  if octs.len != 4: 
+    raise newException(ValueError, "no valid ipv4")
+  for oct in octs:
+    result.add parseInt(oct).byte
+
+proc encodeIpv6(address: string): seq[byte] =
+  ## TODO IPV6
+  raise 
+
+proc newSocksRequest*(
+  cmd: SocksCmd, 
+  address: string, 
+  port: Port, 
+  socksVersion: SOCKS_VERSION = SOCKS_V5
+): SocksRequest =
+
+  if address.len == 0: raise newException(ValueError, "address should not be empty")
+  result = SocksRequest()
+  result.version  = socksVersion.byte
+  result.cmd = cmd.byte
+  result.rsv = 0x00.byte
+  var ipaddr: IpAddress
+  try:
+    ipaddr = address.parseIpAddress()
+    case ipaddr.family
+    of IPv4:
+      echo "IPv4"
+      result.atyp = IP_V4_ADDRESS.byte
+      result.dst_addr = address.encodeIpv4
+    of IPv6:
+      echo "IPv6"
+      result.atyp = IP_V6_ADDRESS.byte 
+      result.dst_addr = address.encodeIpv6
+  except:
+      echo "DOMAINNAME"
+      result.atyp = DOMAINNAME.byte
+      result.dst_addr = address.len.byte & address.toSeq()
+      
+  result.dst_port = port.unPort()
+  echo repr result
 
 proc newSocksResponse*(socksRequest: SocksRequest, rep: REP): SocksResponse =
   result = SocksResponse()
@@ -134,12 +203,6 @@ proc parseDestAddress*(bytes: seq[byte], atyp: ATYP): string =
     of IP_V6_ADDRESS:
       result.add($ch)
       if idx != 15: result.add(':')
-
-proc port*(t: tuple[h, l: byte]): Port =
-  return Port(t.h.int * 256 + t.l.int)
-
-proc unPort*(p: Port): tuple[h, l: byte] =
-  return ((p.int div 256).byte, (p.int mod 256).byte)
 
 proc recvByte*(client: AsyncSocket): Future[byte] {.async.} =
   return (await client.recv(1))[0].byte
@@ -218,13 +281,33 @@ proc recvSocksReq*(client:AsyncSocket, obj: SocksRequest): Future[bool] {.async.
     of IP_V6_ADDRESS: await client.recvBytes(16)
   
   obj.dst_port = (await client.recvByte, await client.recvByte) # *: tuple[h: byte, l: byte]
-
   return true
+
+proc recvSocksResponse*(client:AsyncSocket, obj: SocksResponse): Future[bool] {.async.} =
+  obj.version = await client.recvByte
+  if not inEnum[SOCKS_VERSION](obj.version): return false
+
+  obj.rep = await client.recvByte
+  if not inEnum[REP](obj.rep): return false
+
+  obj.rsv = await client.recvByte 
+  if obj.rsv != 0x00.byte: return false
+
+  obj.atyp = await client.recvByte
+  if not inEnum[ATYP](obj.atyp): return false
+
+  obj.bnd_addr = case obj.atyp.ATYP
+    of IP_V4_ADDRESS: await client.recvBytes(4)
+    of DOMAINNAME: await client.recvBytes((await client.recvByte).int)
+    of IP_V6_ADDRESS: await client.recvBytes(16)
+  
+  obj.bnd_port = (await client.recvByte, await client.recvByte) # *: tuple[h: byte, l: byte]
+  return true    
 
 
 proc recvRequestMessageSel*(client:AsyncSocket, obj: RequestMessageSelection): Future[bool] {.async.} =
   obj.version = await client.recvByte
-  if not inEnum[SOCKS_VERSION](obj.version):  return false
+  if not inEnum[SOCKS_VERSION](obj.version): return false
 
   obj.methodsLen = await client.recvByte
   if obj.methodsLen < 1: return false
@@ -232,3 +315,11 @@ proc recvRequestMessageSel*(client:AsyncSocket, obj: RequestMessageSelection): F
   obj.methods = await client.recvBytes(obj.methodsLen.int)
 
   return true
+
+proc recvResponseMessageSel*(client:AsyncSocket, obj: ResponseMessageSelection): Future[bool] {.async.} =
+  obj.version = await client.recvByte
+  if not inEnum[SOCKS_VERSION](obj.version): return false
+
+  obj.selectedMethod = await client.recvByte
+  return true
+

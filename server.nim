@@ -266,7 +266,7 @@ proc serve(proxy: SocksServer): Future[void] {.async.} =
 
 when isMainModule:
   var proxy = newSocksServer()
-  proxy.allowedAuthMethods = {USERNAME_PASSWORD}
+  proxy.allowedAuthMethods = {USERNAME_PASSWORD, NO_AUTHENTICATION_REQUIRED}
   proxy.addUser("hans", "peter")
 
   block:

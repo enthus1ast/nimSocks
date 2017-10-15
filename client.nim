@@ -24,15 +24,52 @@ type SocksClient = object
 proc doSocksHandshake(
   clientSocket: AsyncSocket,
   methods: set[AuthenticationMethod] = {NO_AUTHENTICATION_REQUIRED},
+  username: string = "",
+  password: string = "",
   version: SOCKS_VERSION = SOCKS_V5
 ): Future[bool] {.async.} = 
   var req = newRequestMessageSelection(version, methods)
   await clientSocket.send($req)
-  
 
+  var respMsgSel = ResponseMessageSelection() #sever tells us which method to use
+  if not (await clientSocket.recvResponseMessageSel(respMsgSel) ):
+    return false # could not parse
+
+  case respMsgSel.selectedMethod.AuthenticationMethod
+  of NO_AUTHENTICATION_REQUIRED:
+    return true
+  of USERNAME_PASSWORD:
+    discard
+  of NO_ACCEPTABLE_METHODS:
+    return false
+  else: return false
+
+proc doSocksConnect(clientSocket: AsyncSocket, targetHost: string, targetPort: Port) : Future[bool] {.async.} =
+  var socksReq = newSocksRequest(CONNECT, targetHost, targetPort)
+  await clientSocket.send($socksReq)
+  var socksResp = SocksResponse()
+  if not (await clientSocket.recvSocksResponse(socksResp)): return false
+  if socksResp.rep != SUCCEEDED.byte: return false
+  # Maybe raise exception?
+  # HOST_UNREACHABLE  
   return true
-proc doSocksConnect(clientSocket: AsyncSocket) : Future[bool] {.async.} =
-  discard
 
 when isMainModule:
-  discard
+  import httpclient
+
+  var sock = waitFor asyncnet.dial("127.0.0.1", Port 1080 )
+  echo waitFor sock.doSocksHandshake()
+  # echo waitFor sock.doSocksConnect("127.0.0.1", Port 9988)
+  # echo waitFor sock.doSocksConnect("192.168.178.123", Port 9988)
+  echo waitFor sock.doSocksConnect("blog.fefe.de", Port 80)
+  # echo "CONNECTED!"
+
+  var hh = """GET / HTTP/1.1
+Host: blog.fefe.de
+
+
+  """ 
+  echo hh
+  waitFor sock.send(hh)
+  while true:
+    write stdout, waitFor sock.recv(1)
