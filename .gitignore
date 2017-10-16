@@ -1,6 +1,8 @@
 nimcache/
 blacklistFancy.txt
 blacklistFancy
+whitelistFancy.txt
+whitelistFancy
 hosts.txt
 server
 client

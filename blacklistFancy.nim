@@ -3,10 +3,10 @@ import strutils
 type
   CheckType* = enum
     # REM = "#"
-    STA = "sta"
-    END = "end"
-    CON = "con"
-    EQL = "eql"
+    STA = "sta" # match start
+    END = "end" # match end
+    CON = "con" # contains
+    EQL = "eql" # equal
 
   BlacklistEntry* = tuple
     checkType: CheckType

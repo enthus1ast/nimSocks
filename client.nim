@@ -3,13 +3,7 @@ import types
 import dbg
 
 type SocksClient = object 
-  # blacklistHost: seq[string]
-  # blacklistHostFancy: seq[BlacklistEntry]
-  # whitelistHost: seq[string]
   clientSocket: AsyncSocket
-  # staticHosts: Table[string, string]
-  # logFile: File
-  # users: TableRef[string, SHA512Digest]
   allowedAuthMethods: set[AuthenticationMethod]
 
 # proc newSocksClient(
@@ -32,7 +26,7 @@ proc doSocksHandshake(
   await clientSocket.send($req)
 
   var respMsgSel = ResponseMessageSelection() #sever tells us which method to use
-  if not (await clientSocket.recvResponseMessageSel(respMsgSel) ):
+  if not (await clientSocket.recvResponseMessageSelection(respMsgSel) ):
     return false # could not parse
 
   case respMsgSel.selectedMethod.AuthenticationMethod
@@ -72,7 +66,7 @@ when isMainModule:
 
   var sock = waitFor asyncnet.dial("127.0.0.1", Port 1080 )
   echo waitFor sock.doSocksHandshake(username="hans", password="petera", methods={NO_AUTHENTICATION_REQUIRED})
-  # echo waitFor sock.doSocksConnect("127.0.0.1", Port 9988)
+  # echo waitFor sock.doSocksConnect("::1", Port 9988)
   # echo waitFor sock.doSocksConnect("192.168.178.123", Port 9988)
   echo waitFor sock.doSocksConnect("blog.fefe.de", Port 80)
   # echo "CONNECTED!"

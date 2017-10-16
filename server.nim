@@ -18,6 +18,7 @@ type SocksServer = ref object
   blacklistHost: seq[string]
   blacklistHostFancy: seq[BlacklistEntry]
   whitelistHost: seq[string]
+  whitelistHostFancy: seq[BlacklistEntry]
   serverSocket: AsyncSocket
   staticHosts: Table[string, string]
   logFile: File
@@ -36,6 +37,7 @@ proc newSocksServer(
   result.blacklistHost = @[]
   result.blacklistHostFancy = @[]
   result.whitelistHost = @[]
+  result.whitelistHostFancy = @[]
   result.serverSocket = newAsyncSocket()
   result.staticHosts = initTable[string, string]()
   result.logFile = open("hosts.txt", fmWrite)
@@ -47,12 +49,12 @@ proc isBlacklisted(proxy: SocksServer, host: string): bool =
   return host in proxy.blacklistHost or proxy.blacklistHostFancy.isListed(host)
 
 proc isWhitelisted(proxy: SocksServer, host: string): bool =
-  return host in proxy.whitelistHost
+  return host in proxy.whitelistHost or proxy.whitelistHostFancy.isListed(host)
 
 proc authenticate(proxy: SocksServer, username, password: string): bool =
   result = false
-  echo "username: ", username
-  echo "password: ", password
+  dbg "username: ", username
+  dbg "password: ", password
   if username.len == 0: return
   if password.len == 0: return
   if not proxy.users.hasKey(username): return false
@@ -64,8 +66,8 @@ proc authenticate(proxy: SocksServer, username, password: string): bool =
   hashedPassword.update(username)
   hashedPassword.update(password)
 
-  echo "hashedPassword: ", hashedPassword
-  echo "hashFromDb: ", hashFromDb
+  dbg "hashedPassword: ", hashedPassword
+  dbg "hashFromDb: ", hashFromDb
 
   if hashedPassword.final() == hashFromDb:
     result = true
@@ -110,7 +112,13 @@ proc pump(proxy: SocksServer, s1, s2: AsyncSocket): Future[void] {.async.} =
       break
     else:
       # write(stdout, buffer)
-      proxy.transferedBytes.inc(buffer.len)
+
+      ## Throughtput moitoring
+      try:
+        proxy.transferedBytes.inc(buffer.len)
+      except:
+        proxy.transferedBytes = 0 # reset if overflow
+
       await s2.send(buffer)
     
   if not s1.isClosed: s1.close()
@@ -129,7 +137,7 @@ proc handleSocks5Connect(
 
   if proxy.staticHosts.contains host:
     host = proxy.staticHosts[host]
-  elif proxy.whitelistHost.len == 0:
+  elif proxy.whitelistHost.len == 0 and proxy.whitelistHostFancy.len == 0:
     if proxy.isBlacklisted(host):
       var socksResp = newSocksResponse(socksReq, CONNECTION_NOT_ALLOWED_BY_RULESET)
       await client.send($socksResp)
@@ -165,7 +173,7 @@ proc handleSocks5Connect(
 proc processClient(proxy: SocksServer, client: AsyncSocket): Future[void] {.async.} =
   # Handshake/Authentication
   var reqMessageSelection = RequestMessageSelection()
-  if (await client.recvRequestMessageSel(reqMessageSelection)) == false:
+  if (await client.recvRequestMessageSelection(reqMessageSelection)) == false:
     dbg "could not parse RequestMessageSelection: ", reqMessageSelection.version
     client.close()
     return
@@ -187,7 +195,7 @@ proc processClient(proxy: SocksServer, client: AsyncSocket): Future[void] {.asyn
     await client.send($respMessageSelection)
 
     var socksUserPasswordReq = SocksUserPasswordRequest()
-    if (await client.recvSocksUserPasswordReq(socksUserPasswordReq)) == false:
+    if (await client.recvSocksUserPasswordRequest(socksUserPasswordReq)) == false:
       client.close()
       return
 
@@ -214,7 +222,7 @@ proc processClient(proxy: SocksServer, client: AsyncSocket): Future[void] {.asyn
 
   # client sends what we should do
   var socksReq = SocksRequest()
-  if (await client.recvSocksReq(socksReq)) == false:
+  if (await client.recvSocksRequest(socksReq)) == false:
     dbg "Could not parse socksReq"
     client.close()
     return
@@ -258,20 +266,14 @@ proc loadList(path: string): seq[string] =
     if lineBuf.startsWith('#'): continue
     result.add lineBuf
 
-# proc 
-
 proc dumpThroughtput(proxy: SocksServer): Future[void] {.async.} =
   let tt = 10_000
   var last = 0
   shallowCopy last, proxy.transferedBytes.int
   while true:
-    # echo proxy.transferedBytes
-    # echo last
-    # echo (proxy.transferedBytes - last)
-    echo "Throughtput: ", ( (proxy.transferedBytes - last) / 1024 ) / (tt / 1000) , " kb/s" #kb
+    echo "Throughtput: ", ( (proxy.transferedBytes - last) / 1024 ) / (tt / 1000) , " kb/s" 
     shallowCopy last, proxy.transferedBytes.int
     await sleepAsync(tt)
-    # proxy.transferedBytes = 0
 
 proc serve(proxy: SocksServer): Future[void] {.async.} =
   proxy.serverSocket.setSockOpt(OptReuseAddr, true)
@@ -298,12 +300,16 @@ when isMainModule:
     assert proxy.authenticate("as hans", "dd cpeter ") == false
 
   # proxy.blacklistHost = loadList("blacklist.txt")
-  proxy.blacklistHostFancy = loadListFancy("blacklistFancy.txt")
+  # proxy.blacklistHostFancy = loadListFancy("blacklistFancy.txt")
+  proxy.whitelistHostFancy = loadListFancy("whitelistFancy.txt")
   # proxy.whitelistHost = @[
-  #   "ch4t.code0.xyz"
+  #   "ch4t.code0.xyz",
+  #   "pr0gramm.com",
+  #   "api.pr0gramm.com",
+  #   "thumb.pr0gramm.com"
   # ]
   # proxy.staticHosts.add("foo.loc", "ch4t.code0.xyz")
-  proxy.staticHosts.add("foo.loc", "93.197.78.252")
+  proxy.staticHosts.add("foo.loc", "ch4t.code0.xyz")
   asyncCheck proxy.serve()
   asyncCheck proxy.dumpThroughtput()
   runForever()
