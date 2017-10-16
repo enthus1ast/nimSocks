@@ -12,7 +12,7 @@ const
               ## this buffer gets not filled completely
               ## anyway...
 
-type SocksServer = object 
+type SocksServer = ref object 
   listenPort: Port
   listenHost: string
   blacklistHost: seq[string]
@@ -23,6 +23,7 @@ type SocksServer = object
   logFile: File
   users: TableRef[string, SHA512Digest]
   allowedAuthMethods: set[AuthenticationMethod]
+  transferedBytes: int 
 
 proc newSocksServer(
   listenPort: Port = Port(DEFAULT_PORT),
@@ -40,6 +41,7 @@ proc newSocksServer(
   result.logFile = open("hosts.txt", fmWrite)
   result.users = newTable[string, SHA512Digest]()
   result.allowedAuthMethods = allowedAuthMethods
+  result.transferedBytes = 0
 
 proc isBlacklisted(proxy: SocksServer, host: string): bool =
   return host in proxy.blacklistHost or proxy.blacklistHostFancy.isListed(host)
@@ -80,7 +82,7 @@ proc addUser(proxy: SocksServer, username: string, password: string) =
   proxy.users.add(username, hashedPassword.final())
 
 
-proc pump(s1, s2: AsyncSocket): Future[void] {.async.} =
+proc pump(proxy: SocksServer, s1, s2: AsyncSocket): Future[void] {.async.} =
   while not (s1.isClosed() and s2.isClosed() ):
     var buffer: string
     try:
@@ -108,6 +110,7 @@ proc pump(s1, s2: AsyncSocket): Future[void] {.async.} =
       break
     else:
       # write(stdout, buffer)
+      proxy.transferedBytes.inc(buffer.len)
       await s2.send(buffer)
     
   if not s1.isClosed: s1.close()
@@ -242,12 +245,10 @@ proc processClient(proxy: SocksServer, client: AsyncSocket): Future[void] {.asyn
   socksResp.bnd_addr = @[hst.len.byte]
   socksResp.bnd_addr &= hst.toBytes()
   socksResp.bnd_port = prt.unPort
-  echo socksResp
-  echo $socksResp
   await client.send($socksResp)
 
-  asyncCheck pump(remoteSocket, client)
-  asyncCheck pump(client, remoteSocket)
+  asyncCheck proxy.pump(remoteSocket, client)
+  asyncCheck proxy.pump(client, remoteSocket)
 
 proc loadList(path: string): seq[string] =
   result = @[]
@@ -256,6 +257,21 @@ proc loadList(path: string): seq[string] =
     lineBuf = line.strip()
     if lineBuf.startsWith('#'): continue
     result.add lineBuf
+
+# proc 
+
+proc dumpThroughtput(proxy: SocksServer): Future[void] {.async.} =
+  let tt = 10_000
+  var last = 0
+  shallowCopy last, proxy.transferedBytes.int
+  while true:
+    # echo proxy.transferedBytes
+    # echo last
+    # echo (proxy.transferedBytes - last)
+    echo "Throughtput: ", ( (proxy.transferedBytes - last) / 1024 ) / (tt / 1000) , " kb/s" #kb
+    shallowCopy last, proxy.transferedBytes.int
+    await sleepAsync(tt)
+    # proxy.transferedBytes = 0
 
 proc serve(proxy: SocksServer): Future[void] {.async.} =
   proxy.serverSocket.setSockOpt(OptReuseAddr, true)
@@ -289,4 +305,5 @@ when isMainModule:
   # proxy.staticHosts.add("foo.loc", "ch4t.code0.xyz")
   proxy.staticHosts.add("foo.loc", "93.197.78.252")
   asyncCheck proxy.serve()
+  asyncCheck proxy.dumpThroughtput()
   runForever()

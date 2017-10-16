@@ -219,8 +219,6 @@ proc newResponseMessageSelection*(version: SOCKS_VERSION, selectedMethod: Authen
   result.version = version.byte
   result.selectedMethod = selectedMethod.byte
 
-
-
 proc newSocksUserPasswordRequest*(username: string, password: string): SocksUserPasswordRequest =
   result = SocksUserPasswordRequest()
   result.authVersion = 0x01.byte #default auth version!
@@ -266,9 +264,6 @@ proc recvSocksUserPasswordReq*(client:AsyncSocket, obj: SocksUserPasswordRequest
 
   return true
 
-# proc `in`*(bt: byte, obj: SOCKS_VERSION): bool =
-#   for en in obj:
-#     echo en
 proc parseEnum[T](bt: byte): T =
   for elem in T:
     if bt.T == elem: 

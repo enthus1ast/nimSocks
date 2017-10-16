@@ -71,7 +71,7 @@ when isMainModule:
   # import httpclient
 
   var sock = waitFor asyncnet.dial("127.0.0.1", Port 1080 )
-  echo waitFor sock.doSocksHandshake(username="hans", password="peter", methods={USERNAME_PASSWORD})
+  echo waitFor sock.doSocksHandshake(username="hans", password="petera", methods={NO_AUTHENTICATION_REQUIRED})
   # echo waitFor sock.doSocksConnect("127.0.0.1", Port 9988)
   # echo waitFor sock.doSocksConnect("192.168.178.123", Port 9988)
   echo waitFor sock.doSocksConnect("blog.fefe.de", Port 80)
