@@ -67,6 +67,29 @@ type
    authVersion*: byte
    status*: byte
 
+proc toBytes*(str: string): seq[byte] =
+  result = @[]
+  for ch in str:
+    result.add ch.byte
+
+# proc recvCString*(client: AsyncSocket): Future[seq[byte]] {.async.} =
+#   result = @[]
+#   var ch: byte
+#   while true:
+#     ch = await client.recvByte
+#     if ch == 0x00.byte: break
+#     result.add(ch.byte)
+
+proc `in`*(bytesMethod: seq[byte], authMethods: set[AuthenticationMethod]): bool =
+  for byteMethod in bytesMethod:
+    if byteMethod.AuthenticationMethod in authMethods: return true
+  return false
+
+proc `$`*(obj: seq[byte]): string =
+  result = ""
+  for ch in obj:
+    result.add ch.char
+
 proc `$`*(obj: ResponseMessageSelection): string =
   result = ""
   result.add obj.version.char
@@ -84,10 +107,6 @@ proc `$`*(obj: SocksResponse): string =
   result.add obj.bnd_port.h.char
   result.add obj.bnd_port.l.char
 
-proc `$`*(obj: seq[byte]): string =
-  result = ""
-  for ch in obj:
-    result.add ch.char
 
 proc `$`*(obj: SocksRequest): string =
   result = ""
@@ -160,15 +179,15 @@ proc newSocksRequest*(
     of IPv4:
       echo "IPv4"
       result.atyp = IP_V4_ADDRESS.byte
-      result.dst_addr = address.encodeIpv4
+      result.dst_addr = address.encodeIpv4()
     of IPv6:
       echo "IPv6"
       result.atyp = IP_V6_ADDRESS.byte 
-      result.dst_addr = address.encodeIpv6
+      result.dst_addr = address.encodeIpv6()
   except:
       echo "DOMAINNAME"
       result.atyp = DOMAINNAME.byte
-      result.dst_addr = address.len.byte & address.toSeq()
+      result.dst_addr = address.len.byte & address.toBytes()
       
   result.dst_port = port.unPort()
   echo repr result
@@ -209,24 +228,6 @@ proc recvByte*(client: AsyncSocket): Future[byte] {.async.} =
 
 proc recvBytes*(client: AsyncSocket, count: int): Future[seq[byte]] {.async.} =
   return (await client.recv(count)).toSeq()
-
-proc toBytes*(str: string): seq[byte] =
-  result = @[]
-  for ch in str:
-    result.add ch.byte
-
-proc recvCString*(client: AsyncSocket): Future[seq[byte]] {.async.} =
-  result = @[]
-  var ch: byte
-  while true:
-    ch = await client.recvByte
-    if ch == 0x00.byte: break
-    result.add(ch.byte)
-
-proc `in`*(bytesMethod: seq[byte], authMethods: set[AuthenticationMethod]): bool =
-  for byteMethod in bytesMethod:
-    if byteMethod.AuthenticationMethod in authMethods: return true
-  return false
 
 proc recvSocksUserPasswordReq*(client:AsyncSocket, obj: SocksUserPasswordRequest): Future[bool] {.async.} =
   obj.authVersion = await client.recvByte

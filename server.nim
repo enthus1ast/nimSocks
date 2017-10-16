@@ -81,7 +81,7 @@ proc addUser(proxy: SocksServer, username: string, password: string) =
 
 
 proc pump(s1, s2: AsyncSocket): Future[void] {.async.} =
-  while true:
+  while not (s1.isClosed() and s2.isClosed() ):
     var buffer: string
     try:
       ## Peek, so input buffer remains the same!
@@ -109,6 +109,10 @@ proc pump(s1, s2: AsyncSocket): Future[void] {.async.} =
     else:
       # write(stdout, buffer)
       await s2.send(buffer)
+    
+  if not s1.isClosed: s1.close()
+  if not s2.isClosed: s2.close()
+
 
 proc handleSocks5Connect(
   proxy: SocksServer,
@@ -236,9 +240,10 @@ proc processClient(proxy: SocksServer, client: AsyncSocket): Future[void] {.asyn
     socksResp = newSocksResponse(socksReq, SUCCEEDED)
     (hst, prt) = remoteSocket.getFd.getLocalAddr(AF_INET)
   socksResp.bnd_addr = @[hst.len.byte]
-  socksResp.bnd_addr &= hst.toBytes
+  socksResp.bnd_addr &= hst.toBytes()
   socksResp.bnd_port = prt.unPort
-  echo repr socksResp
+  echo socksResp
+  echo $socksResp
   await client.send($socksResp)
 
   asyncCheck pump(remoteSocket, client)
