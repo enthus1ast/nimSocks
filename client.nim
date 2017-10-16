@@ -39,7 +39,20 @@ proc doSocksHandshake(
   of NO_AUTHENTICATION_REQUIRED:
     return true
   of USERNAME_PASSWORD:
-    discard
+    var socksUserPasswordRequest = newSocksUserPasswordRequest(username, password)
+    await clientSocket.send($socksUserPasswordRequest)
+
+    var socksUserPasswordResponse = SocksUserPasswordResponse()
+    if not (await clientSocket.recvSocksUserPasswordResponse(socksUserPasswordResponse)):
+      return false # could not parse
+
+    if socksUserPasswordResponse.status != SUCCEEDED.byte:
+      return false
+      # SUCCEEDED = 0x00
+      # FAILED = 0x01    
+
+    return true
+
   of NO_ACCEPTABLE_METHODS:
     return false
   else: return false
@@ -55,10 +68,10 @@ proc doSocksConnect(clientSocket: AsyncSocket, targetHost: string, targetPort: P
   return true
 
 when isMainModule:
-  import httpclient
+  # import httpclient
 
   var sock = waitFor asyncnet.dial("127.0.0.1", Port 1080 )
-  echo waitFor sock.doSocksHandshake()
+  echo waitFor sock.doSocksHandshake(username="hans", password="peter", methods={USERNAME_PASSWORD})
   # echo waitFor sock.doSocksConnect("127.0.0.1", Port 9988)
   # echo waitFor sock.doSocksConnect("192.168.178.123", Port 9988)
   echo waitFor sock.doSocksConnect("blog.fefe.de", Port 80)
@@ -71,5 +84,9 @@ Host: blog.fefe.de
   """ 
   echo hh
   waitFor sock.send(hh)
+  var buf = ""
   while true:
-    write stdout, waitFor sock.recv(1)
+    buf = waitFor sock.recv(1)
+    if buf == "": break
+    write stdout, buf
+    buf.setLen 0

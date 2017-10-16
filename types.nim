@@ -131,6 +131,15 @@ proc `$`*(obj: RequestMessageSelection): string =
   result.add obj.methodsLen.char
   result.add $obj.methods
 
+
+proc `$`*(obj: SocksUserPasswordRequest): string =
+  result = ""
+  result.add obj.authVersion.char 
+  result.add obj.ulen.char 
+  result.add $obj.uname
+  result.add obj.plen.char 
+  result.add $obj.passwd
+
 proc toSeq*(str: string): seq[byte] = 
   result = @[]
   for ch in str:
@@ -209,6 +218,16 @@ proc newResponseMessageSelection*(version: SOCKS_VERSION, selectedMethod: Authen
   result = ResponseMessageSelection()
   result.version = version.byte
   result.selectedMethod = selectedMethod.byte
+
+
+
+proc newSocksUserPasswordRequest*(username: string, password: string): SocksUserPasswordRequest =
+  result = SocksUserPasswordRequest()
+  result.authVersion = 0x01.byte #default auth version!
+  result.ulen = username.len.byte #*: byte
+  result.uname = username.toBytes() #*: seq[byte]
+  result.plen =  password.len.byte #*: byte
+  result.passwd =  password.toBytes() #*: seq[byte]
 
 proc parseDestAddress*(bytes: seq[byte], atyp: ATYP): string =
   result = ""
@@ -324,3 +343,11 @@ proc recvResponseMessageSel*(client:AsyncSocket, obj: ResponseMessageSelection):
   obj.selectedMethod = await client.recvByte
   return true
 
+
+proc recvSocksUserPasswordResponse*(client:AsyncSocket, obj: SocksUserPasswordResponse): Future[bool] {.async.} =
+  obj.authVersion = await client.recvByte 
+  if obj.authVersion != 0x01.byte: return false  
+
+  obj.status = await client.recvByte
+  if not inEnum[UserPasswordStatus](obj.status): return false 
+  return true
