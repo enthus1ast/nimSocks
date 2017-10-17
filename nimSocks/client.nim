@@ -64,13 +64,22 @@ proc doSocksConnect(clientSocket: AsyncSocket, targetHost: string, targetPort: P
 when isMainModule:
   # import httpclient
 
-  var sock = waitFor asyncnet.dial("127.0.0.1", Port 1080 )
-  echo waitFor sock.doSocksHandshake(username="hans", password="peter", 
-    methods={NO_AUTHENTICATION_REQUIRED, USERNAME_PASSWORD}) # the "best" supported gets choosen by the server
+  # var sock = waitFor asyncnet.dial("127.0.0.1", Port 1080 )
+  # echo waitFor sock.doSocksHandshake(username="hans", password="peter", 
+  #   methods={NO_AUTHENTICATION_REQUIRED, USERNAME_PASSWORD}) # the "best" supported gets choosen by the server
   
-  # echo waitFor sock.doSocksConnect("::1", Port 9988)
-  # echo waitFor sock.doSocksConnect("192.168.178.123", Port 9988)
-  echo waitFor sock.doSocksConnect("example.org", Port 80)
+  # # echo waitFor sock.doSocksConnect("::1", Port 9988)
+  # # echo waitFor sock.doSocksConnect("192.168.178.123", Port 9988)
+  # echo waitFor sock.doSocksConnect("example.org", Port 80)
+
+  var sock = waitFor asyncnet.dial("127.0.0.1", Port 1080 ) # dial to the socks server 
+  assert true == waitFor sock.doSocksHandshake(
+      username="username", 
+      password="password", 
+      methods={NO_AUTHENTICATION_REQUIRED, USERNAME_PASSWORD} # the "best" auth supported gets choosen by the server!
+      ) 
+  assert true == waitFor sock.doSocksConnect("example.org", Port 80) # instruct the proxy to connect to target host (by tcp)
+
 
   # Then do normal socket operations
   var hh = """GET / HTTP/1.1
