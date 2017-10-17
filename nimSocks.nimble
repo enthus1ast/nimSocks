@@ -8,4 +8,5 @@ license       = "MIT"
 # Dependencies
 
 requires "nim >= 0.17.3"
-
+requires "nimSHA2"
+requires "dbg"
