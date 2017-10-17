@@ -300,7 +300,7 @@ when isMainModule:
     assert proxy.authenticate("as hans", "dd cpeter ") == false
 
   # proxy.blacklistHost = loadList("blacklist.txt")
-  # proxy.blacklistHostFancy = loadListFancy("blacklistFancy.txt")
+  proxy.blacklistHostFancy = loadListFancy("blacklistFancy.txt")
   proxy.whitelistHostFancy = loadListFancy("whitelistFancy.txt")
   # proxy.whitelistHost = @[
   #   "ch4t.code0.xyz",

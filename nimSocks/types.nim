@@ -204,11 +204,11 @@ proc newResponseMessageSelection*(version: SOCKS_VERSION, selectedMethod: Authen
 
 proc newSocksUserPasswordRequest*(username: string, password: string): SocksUserPasswordRequest =
   result = SocksUserPasswordRequest()
-  result.authVersion = AuthVersionV1.byte #default auth version!
-  result.ulen = username.len.byte #*: byte
-  result.uname = username.toBytes() #*: seq[byte]
-  result.plen =  password.len.byte #*: byte
-  result.passwd =  password.toBytes() #*: seq[byte]
+  result.authVersion = AuthVersionV1.byte
+  result.ulen = username.len.byte
+  result.uname = username.toBytes()
+  result.plen =  password.len.byte
+  result.passwd =  password.toBytes()
 
 proc parseDestAddress*(bytes: seq[byte], atyp: ATYP): string =
   result = ""
@@ -310,7 +310,6 @@ proc recvRequestMessageSelection*(client:AsyncSocket, obj: RequestMessageSelecti
   if obj.methodsLen < 1: return false
 
   obj.methods = await client.recvBytes(obj.methodsLen.int)
-
   return true
 
 proc recvResponseMessageSelection*(client:AsyncSocket, obj: ResponseMessageSelection): Future[bool] {.async.} =
@@ -319,7 +318,6 @@ proc recvResponseMessageSelection*(client:AsyncSocket, obj: ResponseMessageSelec
 
   obj.selectedMethod = await client.recvByte
   return true
-
 
 proc recvSocksUserPasswordResponse*(client:AsyncSocket, obj: SocksUserPasswordResponse): Future[bool] {.async.} =
   obj.authVersion = await client.recvByte 
