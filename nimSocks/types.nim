@@ -4,6 +4,9 @@ const
   DEFAULT_PORT* = 1080
   RESERVED = 0x00.byte
 
+  IP_V4_ADDRESS_LEN = 4
+  IP_V6_ADDRESS_LEN = 16
+
 type
   SOCKS_VERSION* = enum
     # SOCKS_V4 = 0x04.byte # same as 4a
@@ -168,16 +171,16 @@ proc newSocksRequest*(
     ipaddr = address.parseIpAddress()
     case ipaddr.family
     of IPv4:
-      echo "IPv4"
+      # echo "IPv4"
       result.atyp = IP_V4_ADDRESS.byte
       result.dst_addr = ipaddr.address_v4.toBytes()
       
     of IPv6:
-      echo "IPv6"
+      # echo "IPv6"
       result.atyp = IP_V6_ADDRESS.byte 
       result.dst_addr = ipaddr.address_v6.toBytes()
   except:
-      echo "DOMAINNAME"
+      # echo "DOMAINNAME"
       result.atyp = DOMAINNAME.byte
       result.dst_addr = address.len.byte & address.toBytes()
       
@@ -218,10 +221,10 @@ proc parseDestAddress*(bytes: seq[byte], atyp: ATYP): string =
       result.add(ch.chr())
     of IP_V4_ADDRESS: 
       result.add($ch)
-      if idx != 3: result.add('.')
+      if idx != IP_V4_ADDRESS_LEN-1: result.add('.')
     of IP_V6_ADDRESS:
       result.add($ch)
-      if idx != 15: result.add(':')
+      if idx != IP_V6_ADDRESS_LEN-1: result.add(':')
 
 proc recvByte*(client: AsyncSocket): Future[byte] {.async.} =
   return (await client.recv(1))[0].byte
@@ -274,11 +277,11 @@ proc recvSocksRequest*(client:AsyncSocket, obj: SocksRequest): Future[bool] {.as
   if not inEnum[ATYP](obj.atyp): return false
 
   obj.dst_addr = case obj.atyp.ATYP
-    of IP_V4_ADDRESS: await client.recvBytes(4)
+    of IP_V4_ADDRESS: await client.recvBytes(IP_V4_ADDRESS_LEN)
     of DOMAINNAME: await client.recvBytes((await client.recvByte).int)
-    of IP_V6_ADDRESS: await client.recvBytes(16)
+    of IP_V6_ADDRESS: await client.recvBytes(IP_V6_ADDRESS_LEN)
   
-  obj.dst_port = (await client.recvByte, await client.recvByte) # *: tuple[h: byte, l: byte]
+  obj.dst_port = (await client.recvByte, await client.recvByte)
   return true
 
 proc recvSocksResponse*(client:AsyncSocket, obj: SocksResponse): Future[bool] {.async.} =
@@ -295,11 +298,11 @@ proc recvSocksResponse*(client:AsyncSocket, obj: SocksResponse): Future[bool] {.
   if not inEnum[ATYP](obj.atyp): return false
 
   obj.bnd_addr = case obj.atyp.ATYP
-    of IP_V4_ADDRESS: await client.recvBytes(4)
+    of IP_V4_ADDRESS: await client.recvBytes(IP_V4_ADDRESS_LEN)
     of DOMAINNAME: await client.recvBytes((await client.recvByte).int)
-    of IP_V6_ADDRESS: await client.recvBytes(16)
+    of IP_V6_ADDRESS: await client.recvBytes(IP_V6_ADDRESS_LEN)
   
-  obj.bnd_port = (await client.recvByte, await client.recvByte) # *: tuple[h: byte, l: byte]
+  obj.bnd_port = (await client.recvByte, await client.recvByte)
   return true    
 
 proc recvRequestMessageSelection*(client:AsyncSocket, obj: RequestMessageSelection): Future[bool] {.async.} =

@@ -200,7 +200,7 @@ proc processClient(proxy: SocksServer, client: AsyncSocket): Future[void] {.asyn
       return
 
     var socksUserPasswordResp = SocksUserPasswordResponse()
-    socksUserPasswordResp.authVersion = 0x01
+    socksUserPasswordResp.authVersion = AuthVersionV1.byte
     if proxy.authenticate($socksUserPasswordReq.uname, $socksUserPasswordReq.passwd):
       socksUserPasswordResp.status = UserPasswordStatus.SUCCEEDED.byte
       dbg "Sending good: ", repr($socksUserPasswordResp)
@@ -266,12 +266,12 @@ proc loadList(path: string): seq[string] =
     if lineBuf.startsWith('#'): continue
     result.add lineBuf
 
-proc dumpThroughtput(proxy: SocksServer): Future[void] {.async.} =
+proc dumpThroughput(proxy: SocksServer): Future[void] {.async.} =
   let tt = 10_000
   var last = 0
   shallowCopy last, proxy.transferedBytes.int
   while true:
-    echo "Throughtput: ", ( (proxy.transferedBytes - last) / 1024 ) / (tt / 1000) , " kb/s" 
+    echo "throughput: ", ( (proxy.transferedBytes - last) / 1024 ) / (tt / 1000) , " kb/s" 
     shallowCopy last, proxy.transferedBytes.int
     await sleepAsync(tt)
 
@@ -303,13 +303,10 @@ when isMainModule:
   proxy.blacklistHostFancy = loadListFancy("blacklistFancy.txt")
   proxy.whitelistHostFancy = loadListFancy("whitelistFancy.txt")
   # proxy.whitelistHost = @[
-  #   "ch4t.code0.xyz",
-  #   "pr0gramm.com",
-  #   "api.pr0gramm.com",
-  #   "thumb.pr0gramm.com"
+  #   "example.org"
   # ]
-  # proxy.staticHosts.add("foo.loc", "ch4t.code0.xyz")
-  proxy.staticHosts.add("foo.loc", "ch4t.code0.xyz")
+  # proxy.staticHosts.add("foo.loc", "example.org")
+  proxy.staticHosts.add("foo.loc", "example.org")
   asyncCheck proxy.serve()
-  asyncCheck proxy.dumpThroughtput()
+  asyncCheck proxy.dumpThroughput()
   runForever()
