@@ -370,8 +370,10 @@ proc processClient(proxy: SocksServer, client: AsyncSocket): Future[void] {.asyn
 
   case socksVersionRef.socksVersion.SOCKS_VERSION
   of SOCKS_V4:
+    if not proxy.socks4Enabled: return
     await proxy.processSocks4(client)
   of SOCKS_V5:
+    if not proxy.socks5Enabled: return
     await proxy.processSocks5(client)
 
 
