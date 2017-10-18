@@ -148,8 +148,8 @@ proc handleSocks5Connect(
   var
     host = socksReq.dst_addr.parseDestAddress(socksReq.atyp.ATYP)
     remoteSocket: AsyncSocket
-  dbg "host: ", host
 
+  dbg "host: ", host
   if proxy.staticHosts.contains host:
     host = proxy.staticHosts[host]
   elif proxy.whitelistHost.len == 0 and proxy.whitelistHostFancy.len == 0:
@@ -273,6 +273,62 @@ proc processSocks5(proxy: SocksServer, client: AsyncSocket): Future[void] {.asyn
   asyncCheck proxy.pump(remoteSocket, client)
   asyncCheck proxy.pump(client, remoteSocket)
 
+
+proc isSocks4aHack(dst_ip: seq[byte]): bool =
+  return 
+    dst_ip[0] == NULL and 
+    dst_ip[1] == NULL and
+    dst_ip[2] == NULL and
+    dst_ip[3] != NULL
+
+proc handleSocks4Connect(
+  proxy: SocksServer,
+  client: AsyncSocket,
+  socksReq: Socks4Request
+): Future[(bool, AsyncSocket)] {.async.} =
+  var
+    host = socksReq.dst_ip.parseDestAddress(IP_V4_ADDRESS)
+    remoteSocket: AsyncSocket
+    
+  dbg "host: ", host
+  if socksReq.dst_ip.isSocks4aHack():
+    dbg "socks4a"
+    # host = socksReq.userid.parseDestAddress(DOMAINNAME)
+    host = (await client.recvNullTerminated()).parseDestAddress(DOMAINNAME)
+    dbg host
+
+  if proxy.staticHosts.contains host:
+    host = proxy.staticHosts[host]
+  elif proxy.whitelistHost.len == 0 and proxy.whitelistHostFancy.len == 0:
+    if proxy.isBlacklisted(host):
+      var socksResp = newSocks4Response(REQUEST_REJECTED_OR_FAILED, socksReq.dst_ip, socksReq.dst_port)
+      await client.send($socksResp)
+      echo "Blacklisted host:", host
+      return (false, nil)
+  else:
+    if not proxy.isWhitelisted(host):
+      var socksResp = newSocks4Response(REQUEST_REJECTED_OR_FAILED, socksReq.dst_ip, socksReq.dst_port)
+      await client.send($socksResp)
+      echo "Not whitelisted host:", host
+      return (false, nil)
+
+  proxy.logFile.writeLine(host)
+  proxy.logFile.flushFile()
+
+  var connectSuccess = true
+  try:
+    remoteSocket =  await asyncnet.dial(host, socksReq.dst_port.port())
+  except:
+    connectSuccess = false
+
+  if not connectSuccess:
+    var socksResp = newSocks4Response(REQUEST_REJECTED_OR_FAILED, socksReq.dst_ip, socksReq.dst_port)
+    await client.send($socksResp)
+    echo "HOST_UNREACHABLE:", host        
+    return (false, nil)
+
+  return (true, remoteSocket)
+
 proc processSocks4(proxy: SocksServer, client: AsyncSocket): Future[void] {.async.} =
   dbg "socks4"
 
@@ -289,8 +345,8 @@ proc processSocks4(proxy: SocksServer, client: AsyncSocket): Future[void] {.asyn
 
   case socks4Request.cmd.Socks4Cmd
   of Socks4Cmd.CONNECT:
-    echo "CONNECT not implemented"
-    #(handleCmdSucceed, remoteSocket) = await proxy.handleSocks5Connect(client, socks4Request)
+    # echo "CONNECT not implemented"
+    (handleCmdSucceed, remoteSocket) = await proxy.handleSocks4Connect(client, socks4Request)
   of Socks4Cmd.BIND:
     echo "BIND not implemented"
   else:
@@ -303,16 +359,17 @@ proc processSocks4(proxy: SocksServer, client: AsyncSocket): Future[void] {.asyn
     return
   dbg "Handling command: succeed"
 
-  # var
-  #   socksResp = newSocksResponse(socksReq, SUCCEEDED)
-  #   (hst, prt) = remoteSocket.getFd.getLocalAddr(AF_INET)
-  # socksResp.bnd_addr = @[hst.len.byte]
-  # socksResp.bnd_addr &= hst.toBytes()
-  # socksResp.bnd_port = prt.unPort
-  # await client.send($socksResp)
+  var
+    socksResp = newSocks4Response(REQUEST_GRANTED, socks4Request.dst_ip, socks4Request.dst_port)
+    (hst, prt) = remoteSocket.getFd.getLocalAddr(AF_INET)
+  # socksResp.dst_ip = @[hst.len.byte]
+  socksResp.dst_ip = @[1.byte,2.byte,4.byte,4.byte] #hst.toBytes().parseDestAddress(IP_V4_ADDRESS).toBytes()
+  socksResp.dst_port = prt.unPort
+  echo repr socksResp
+  await client.send($socksResp)
 
-  # asyncCheck proxy.pump(remoteSocket, client)
-  # asyncCheck proxy.pump(client, remoteSocket)
+  asyncCheck proxy.pump(remoteSocket, client)
+  asyncCheck proxy.pump(client, remoteSocket)
   # discard
 
 proc processClient(proxy: SocksServer, client: AsyncSocket): Future[void] {.async.} =

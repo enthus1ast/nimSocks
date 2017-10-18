@@ -6,7 +6,7 @@ const
 
   IP_V4_ADDRESS_LEN = 4
   IP_V6_ADDRESS_LEN = 16
-  NULL = 0x00.byte
+  NULL* = 0x00.byte
 
 type
   SOCKS_VERSION* = enum
@@ -50,6 +50,15 @@ type
    COMMAND_NOT_SUPPORTED = 0x07.byte 
    ADDRESS_TYPE_NOT_SUPPORTED = 0x08.byte 
    # to X'FF' unassigned = 0x09.byte
+
+  REP4* = enum
+    REQUEST_GRANTED = 0x5A.byte
+    REQUEST_REJECTED_OR_FAILED = 0x05B.byte
+
+    # 92: request rejected becasue SOCKS server cannot connect to
+    #     identd on the client
+    # 93: request rejected because the client program and identd
+    #     report different user-ids  
 
   # SocksVersionRef* = ref byte
   SocksVersionRef* = ref object
@@ -97,28 +106,11 @@ type
     dst_ip*: seq[byte] # 4 byte array! # TODO 
     userid*: seq[byte] # null terminated but not captured!
 
-
-
-
-proc `$`(obj: Socks4Request): string = 
-  result = ""  
-  result.add obj.socksVersion.char
-  result.add obj.cmd.char
-  result.add obj.dst_port.h.char
-  result.add obj.dst_port.l.char  
-  result.add $obj.dst_ip
-  result.add $obj.userid
-  result.add NULL.char
- #  Socks4Response* = ref object
-
- #    +----+----+----+----+----+----+----+----+
- #    | VN | CD | DSTPORT |      DSTIP        |
- #    +----+----+----+----+----+----+----+----+
- # # of bytes:     1    1      2              4
-
-
-
-
+  Socks4Response* = ref object
+    socks4ReplyVersion*: byte 
+    cmd*: byte
+    dst_port*: tuple[h: byte, l: byte]
+    dst_ip*: seq[byte] # 4 byte array! # TODO 
 
 
 
@@ -188,6 +180,28 @@ proc `$`*(obj: SocksUserPasswordRequest): string =
   result.add $obj.uname
   result.add obj.plen.char 
   result.add $obj.passwd
+
+proc `$`*(obj: Socks4Request): string = 
+  result = ""  
+  result.add obj.socksVersion.char
+  result.add obj.cmd.char
+  result.add obj.dst_port.h.char
+  result.add obj.dst_port.l.char  
+  result.add $obj.dst_ip
+  result.add $obj.userid
+  result.add NULL.char
+
+proc `$`*(obj: Socks4Response): string = 
+  result = ""  
+  result.add obj.socks4ReplyVersion.char
+  result.add obj.cmd.char
+  result.add obj.dst_port.h.char
+  result.add obj.dst_port.l.char  
+  result.add $obj.dst_ip
+  # result.add $obj.userid
+  # result.add NULL.char
+
+
 
 proc toSeq*(str: string): seq[byte] = 
   result = @[]
@@ -422,3 +436,32 @@ proc recvSocks4Request*(client:AsyncSocket, obj: Socks4Request): Future[bool] {.
   obj.userid = await client.recvNullTerminated()
 
   return true  
+
+
+ #  Socks4Response* = ref object
+
+ #    +----+----+----+----+----+----+----+----+
+ #    | VN | CD | DSTPORT |      DSTIP        |
+ #    +----+----+----+----+----+----+----+----+
+#       1    1      2              4
+
+
+  # Socks4Response* = ref object
+  #   socksVersion*: byte 
+  #   cmd*: byte
+  #   dst_port*: tuple[h: byte, l: byte]
+  #   dst_ip*: seq[byte] # 4 byte array! # TODO 
+
+
+proc newSocks4Response*(rep: REP4, destIp: seq[byte], port: tuple[h, l: byte] ): Socks4Response =
+  result = Socks4Response()
+  result.socks4ReplyVersion = NULL #SOCKS_V4.byte
+  result.cmd = rep.byte
+  result.dst_ip = destIp
+  result.dst_port = port
+
+  # result.rsv = RESERVED.byte
+  # result.atyp = socksRequest.atyp
+
+
+# newSocks4Response
