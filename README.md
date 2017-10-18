@@ -2,7 +2,7 @@
 a filtering (standalone) SOCKS proxy server and client library for nim.
 
 ## Features client and server
-- SOCKS4, SOCKS4a, SOCKS5 
+- (SOCKS4, SOCKS4a server only), SOCKS5 
 - password auth / no auth
 - ipv4, ipv6, domain.
 - SOCKS CONNECT (no bind, no udp atm)
