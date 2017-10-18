@@ -370,14 +370,15 @@ proc processClient(proxy: SocksServer, client: AsyncSocket): Future[void] {.asyn
 
   case socksVersionRef.socksVersion.SOCKS_VERSION
   of SOCKS_V4:
-    if not proxy.socks4Enabled: return
+    if not proxy.socks4Enabled: 
+      client.close()
+      return
     await proxy.processSocks4(client)
   of SOCKS_V5:
-    if not proxy.socks5Enabled: return
+    if not proxy.socks5Enabled:
+      client.close() 
+      return
     await proxy.processSocks5(client)
-
-
-
 
 proc loadList(path: string): seq[string] =
   result = @[]
@@ -412,19 +413,21 @@ proc serve(proxy: SocksServer): Future[void] {.async.} =
     echo "connection from: ", address
     asyncCheck proxy.processClient(client)
 
+when not defined release:
+  block:
+    var proxy = newSocksServer()
+    proxy.addUser("hans", "peter")
+    assert proxy.authenticate("hans", "peter") == true
+    assert proxy.authenticate(" hans", "peter") == false
+    assert proxy.authenticate("hans", "peter ") == false
+    assert proxy.authenticate(" hans", "peter ") == false
+    assert proxy.authenticate("as hans", "dd cpeter ") == false
 
 when isMainModule:
   var proxy = newSocksServer()
   proxy.socks4Enabled = true # no auth!
   proxy.allowedAuthMethods = {USERNAME_PASSWORD, NO_AUTHENTICATION_REQUIRED}
   proxy.addUser("hans", "peter")
-
-  block:
-    assert proxy.authenticate("hans", "peter") == true
-    assert proxy.authenticate(" hans", "peter") == false
-    assert proxy.authenticate("hans", "peter ") == false
-    assert proxy.authenticate(" hans", "peter ") == false
-    assert proxy.authenticate("as hans", "dd cpeter ") == false
 
   # proxy.blacklistHost = loadList("blacklist.txt")
   proxy.blacklistHostFancy = loadListFancy("blacklistFancy.txt")

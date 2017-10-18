@@ -121,6 +121,7 @@ proc `$`*(obj: ResponseMessageSelection): string =
   result.add obj.version.char
   result.add obj.selectedMethod.char
 
+
 proc `$`*(obj: SocksResponse): string =
   result = ""
   result.add obj.version.char
@@ -233,6 +234,8 @@ proc newSocksResponse*(socksRequest: SocksRequest, rep: REP): SocksResponse =
   result.rep = rep.byte
   result.rsv = RESERVED.byte
   result.atyp = socksRequest.atyp
+  result.bnd_addr = @[]
+  result.bnd_port = (0.byte,0.byte)
 
 proc newRequestMessageSelection*(version: SOCKS_VERSION, methods: set[AuthenticationMethod]): RequestMessageSelection =
   result = RequestMessageSelection()
