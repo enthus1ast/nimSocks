@@ -365,8 +365,10 @@ proc recvSocksResponse*(client:AsyncSocket, obj: SocksResponse): Future[bool] {.
   return true    
 
 proc recvRequestMessageSelection*(client:AsyncSocket, obj: RequestMessageSelection): Future[bool] {.async.} =
-  obj.version = await client.recvByte
-  if not inEnum[SOCKS_VERSION](obj.version): return false
+  # This now get read by processClient
+  # obj.version = await client.recvByte
+  # if not inEnum[SOCKS_VERSION](obj.version): return false
+  obj.version = SOCKS_V5.byte
 
   obj.methodsLen = await client.recvByte
   if obj.methodsLen < 1: return false
@@ -407,8 +409,9 @@ proc recvSocksVersion*(client:AsyncSocket, socksVersionRef: SocksVersionRef): Fu
  #       1    1      2              4           variable       1
 
 proc recvSocks4Request*(client:AsyncSocket, obj: Socks4Request): Future[bool] {.async.} =
-  obj.socksVersion = await client.recvByte
-  if obj.socksVersion != SOCKS_V4.byte: return false
+  # obj.socksVersion = await client.recvByte
+  # if obj.socksVersion != SOCKS_V4.byte: return false
+  obj.socksVersion = SOCKS_V4.byte
 
   obj.cmd = await client.recvByte
   if not inEnum[SocksCmd](obj.cmd): return false

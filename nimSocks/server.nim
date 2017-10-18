@@ -25,11 +25,16 @@ type SocksServer = ref object
   users: TableRef[string, SHA512Digest]
   allowedAuthMethods: set[AuthenticationMethod]
   transferedBytes: int 
+  socks4Enabled: bool
+  socks5Enabled: bool
 
 proc newSocksServer(
   listenPort: Port = Port(DEFAULT_PORT),
   listenHost: string = "",
-  allowedAuthMethods: set[AuthenticationMethod] = {USERNAME_PASSWORD}
+  allowedAuthMethods: set[AuthenticationMethod] = {USERNAME_PASSWORD},
+  socks4Enabled = false, 
+  socks5Enabled = true
+
 ): SocksServer =
   result = SocksServer()
   result.listenPort = listenPort
@@ -44,6 +49,8 @@ proc newSocksServer(
   result.users = newTable[string, SHA512Digest]()
   result.allowedAuthMethods = allowedAuthMethods
   result.transferedBytes = 0
+  result.socks4Enabled = socks4Enabled
+  result.socks5Enabled = socks5Enabled
 
 proc isBlacklisted(proxy: SocksServer, host: string): bool =
   return host in proxy.blacklistHost or proxy.blacklistHostFancy.isListed(host)
@@ -242,9 +249,9 @@ proc processSocks5(proxy: SocksServer, client: AsyncSocket): Future[void] {.asyn
     of SocksCmd.CONNECT:
       (handleCmdSucceed, remoteSocket) = await proxy.handleSocks5Connect(client, socksReq)
     of SocksCmd.BIND:
-      echo "not implemented"
+      echo "BIND not implemented"
     of SocksCmd.UDP_ASSOCIATE:
-      echo "not implemented"
+      echo "UDP_ASSOCIATE not implemented"
     else:
       echo "not implemented"
       return
@@ -267,12 +274,51 @@ proc processSocks5(proxy: SocksServer, client: AsyncSocket): Future[void] {.asyn
   asyncCheck proxy.pump(client, remoteSocket)
 
 proc processSocks4(proxy: SocksServer, client: AsyncSocket): Future[void] {.async.} =
-  discard
+  dbg "socks4"
+
+  var socks4Request = Socks4Request()
+  if (await client.recvSocks4Request(socks4Request)) == false:
+    dbg "could not parse Socks4Request: " #, socks4Request
+    client.close()
+    return
+
+
+  var
+    remoteSocket: AsyncSocket = nil
+    handleCmdSucceed: bool = false
+
+  case socks4Request.cmd.Socks4Cmd
+  of Socks4Cmd.CONNECT:
+    echo "CONNECT not implemented"
+    #(handleCmdSucceed, remoteSocket) = await proxy.handleSocks5Connect(client, socks4Request)
+  of Socks4Cmd.BIND:
+    echo "BIND not implemented"
+  else:
+    echo "not implemented"
+    return
+
+  if handleCmdSucceed == false:
+    dbg "Handling command: failed"
+    client.close()
+    return
+  dbg "Handling command: succeed"
+
+  # var
+  #   socksResp = newSocksResponse(socksReq, SUCCEEDED)
+  #   (hst, prt) = remoteSocket.getFd.getLocalAddr(AF_INET)
+  # socksResp.bnd_addr = @[hst.len.byte]
+  # socksResp.bnd_addr &= hst.toBytes()
+  # socksResp.bnd_port = prt.unPort
+  # await client.send($socksResp)
+
+  # asyncCheck proxy.pump(remoteSocket, client)
+  # asyncCheck proxy.pump(client, remoteSocket)
+  # discard
 
 proc processClient(proxy: SocksServer, client: AsyncSocket): Future[void] {.async.} =
 
   # Check for socks version.
-  var socksVersionRef: SocksVersionRef
+  var socksVersionRef = SocksVersionRef()
   if (await client.recvSocksVersion(socksVersionRef)) == false:
     dbg "unknown socks version: ", socksVersionRef.socksVersion
     client.close()
@@ -296,6 +342,7 @@ proc loadList(path: string): seq[string] =
     result.add lineBuf
 
 proc dumpThroughput(proxy: SocksServer): Future[void] {.async.} =
+  ## TODO
   let tt = 10_000
   var last = 0
   shallowCopy last, proxy.transferedBytes.int
@@ -308,6 +355,10 @@ proc serve(proxy: SocksServer): Future[void] {.async.} =
   proxy.serverSocket.setSockOpt(OptReuseAddr, true)
   proxy.serverSocket.bindAddr(proxy.listenPort, proxy.listenHost)
   proxy.serverSocket.listen()
+
+  # TODO maybe do this:
+  # if (not (NO_AUTHENTICATION_REQUIRED in proxy.allowedAuthMethods)) and (not proxy.socks5Enabled):
+  #   raise newException(ValueError, "SOCKS4 does not support authentication, enable SOCKS5 ")
   
   while true:
     let (address, client) = await proxy.serverSocket.acceptAddr()
@@ -318,6 +369,7 @@ proc serve(proxy: SocksServer): Future[void] {.async.} =
 
 when isMainModule:
   var proxy = newSocksServer()
+  proxy.socks4Enabled = true # no auth!
   proxy.allowedAuthMethods = {USERNAME_PASSWORD, NO_AUTHENTICATION_REQUIRED}
   proxy.addUser("hans", "peter")
 
