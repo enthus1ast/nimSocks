@@ -6,10 +6,11 @@ const
 
   IP_V4_ADDRESS_LEN = 4
   IP_V6_ADDRESS_LEN = 16
+  NULL = 0x00.byte
 
 type
   SOCKS_VERSION* = enum
-    # SOCKS_V4 = 0x04.byte # same as 4a
+    SOCKS_V4 = 0x04.byte # same as 4a
     SOCKS_V5 = 0x05.byte
   RequestMessageSelection* = ref object
     version*: byte
@@ -30,10 +31,10 @@ type
   UserPasswordStatus* {.pure.} = enum
     SUCCEEDED = 0x00
     FAILED = 0x01
-  SocksCmd* = enum
+  SocksCmd* {.pure.} = enum
     CONNECT = 0x01.byte
     BIND = 0x02.byte
-    UDP_ASSOCIATE = 0x03.byte
+    UDP_ASSOCIATE = 0x03.byte 
   ATYP* = enum
     IP_V4_ADDRESS = 0x01.byte
     DOMAINNAME = 0x03.byte
@@ -49,6 +50,11 @@ type
    COMMAND_NOT_SUPPORTED = 0x07.byte 
    ADDRESS_TYPE_NOT_SUPPORTED = 0x08.byte 
    # to X'FF' unassigned = 0x09.byte
+
+  # SocksVersionRef* = ref byte
+  SocksVersionRef* = ref object
+    socksVersion*: byte
+
   SocksRequest* = ref object
     version*: byte
     cmd*: byte
@@ -72,6 +78,51 @@ type
   SocksUserPasswordResponse* = ref object
    authVersion*: byte
    status*: byte
+
+  ## Socks4 & Socks4a
+
+
+  Socks4Cmd* {.pure.} = enum
+    CONNECT = 0x01.byte
+    BIND = 0x02.byte
+
+  Socks4Request* = ref object
+    # socksVersion*: SOCKS_VERSION 
+    socksVersion*: byte 
+
+    # cmd*: Socks4Cmd
+    cmd*: byte
+
+    dst_port*: tuple[h: byte, l: byte]
+    dst_ip*: seq[byte] # 4 byte array! # TODO 
+    userid*: seq[byte] # null terminated but not captured!
+
+
+
+
+proc `$`(obj: Socks4Request): string = 
+  result = ""  
+  result.add obj.socksVersion.char
+  result.add obj.cmd.char
+  result.add obj.dst_port.h.char
+  result.add obj.dst_port.l.char  
+  result.add $obj.dst_ip
+  result.add $obj.userid
+  result.add NULL.char
+ #  Socks4Response* = ref object
+
+ #    +----+----+----+----+----+----+----+----+
+ #    | VN | CD | DSTPORT |      DSTIP        |
+ #    +----+----+----+----+----+----+----+----+
+ # # of bytes:     1    1      2              4
+
+
+
+
+
+
+
+
 
 proc toBytes*(str: string): seq[byte] =
   result = @[]
@@ -165,7 +216,7 @@ proc newSocksRequest*(
   result = SocksRequest()
   result.version  = socksVersion.byte
   result.cmd = cmd.byte
-  result.rsv = 0x00.byte
+  result.rsv = RESERVED.byte
   var ipaddr: IpAddress
   try:
     ipaddr = address.parseIpAddress()
@@ -232,6 +283,15 @@ proc recvByte*(client: AsyncSocket): Future[byte] {.async.} =
 proc recvBytes*(client: AsyncSocket, count: int): Future[seq[byte]] {.async.} =
   return (await client.recv(count)).toSeq()
 
+proc recvNullTerminated*(client: AsyncSocket): Future[seq[byte]] {.async.} =
+  ## TODO should we limit the reading to a fixed value?
+  result = @[]
+  var ch: byte
+  while true:
+    ch = (await client.recv(1))[0].byte
+    if ch == NULL: break
+    result.add ch
+
 proc recvSocksUserPasswordRequest*(client:AsyncSocket, obj: SocksUserPasswordRequest): Future[bool] {.async.} =
   obj.authVersion = await client.recvByte
   if obj.authVersion != AuthVersionV1.byte: return false
@@ -247,7 +307,6 @@ proc recvSocksUserPasswordRequest*(client:AsyncSocket, obj: SocksUserPasswordReq
 
   obj.passwd = await client.recvBytes(obj.plen.int)
   if obj.passwd.len == 0: return false
-
   return true
 
 proc parseEnum[T](bt: byte): T =
@@ -329,3 +388,34 @@ proc recvSocksUserPasswordResponse*(client:AsyncSocket, obj: SocksUserPasswordRe
   obj.status = await client.recvByte
   if not inEnum[UserPasswordStatus](obj.status): return false 
   return true
+
+# proc recvSocksVersion*(client:AsyncSocket, socksVersion: SOCKS_VERSION): Future[bool] {.async.} =
+proc recvSocksVersion*(client:AsyncSocket, socksVersionRef: SocksVersionRef): Future[bool] {.async.} =
+  socksVersionRef.socksVersion = await client.recvByte
+  if not inEnum[SOCKS_VERSION](socksVersionRef.socksVersion): return false
+  return true
+
+
+
+
+
+
+    # null*:
+ #    +----+----+----+----+----+----+----+----+----+----+....+----+
+ #    | VN | CD | DSTPORT |      DSTIP        | USERID       |NULL|
+ #    +----+----+----+----+----+----+----+----+----+----+....+----+
+ #       1    1      2              4           variable       1
+
+proc recvSocks4Request*(client:AsyncSocket, obj: Socks4Request): Future[bool] {.async.} =
+  obj.socksVersion = await client.recvByte
+  if obj.socksVersion != SOCKS_V4.byte: return false
+
+  obj.cmd = await client.recvByte
+  if not inEnum[SocksCmd](obj.cmd): return false
+
+  obj.dst_port = (await client.recvByte, await client.recvByte)
+
+  obj.dst_ip = await client.recvBytes(IP_V4_ADDRESS_LEN)
+  obj.userid = await client.recvNullTerminated()
+
+  return true  

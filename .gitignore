@@ -7,3 +7,5 @@ hosts.txt
 server
 client
 types
+*.exe
+*.dll

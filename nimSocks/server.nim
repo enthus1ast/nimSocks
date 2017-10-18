@@ -85,6 +85,14 @@ proc addUser(proxy: SocksServer, username: string, password: string) =
 
 
 proc pump(proxy: SocksServer, s1, s2: AsyncSocket): Future[void] {.async.} =
+
+# TODO:
+# from recv docs
+# For buffered sockets this function will attempt to read all the requested data. 
+# It will read this data in BufferSize chunks.
+# For unbuffered sockets this function makes no effort to read all the data requested. 
+# It will return as much data as the operating system gives it.
+
   while not (s1.isClosed() and s2.isClosed() ):
     var buffer: string
     try:
@@ -170,7 +178,7 @@ proc handleSocks5Connect(
 
   return (true, remoteSocket)
 
-proc processClient(proxy: SocksServer, client: AsyncSocket): Future[void] {.async.} =
+proc processSocks5(proxy: SocksServer, client: AsyncSocket): Future[void] {.async.} =
   # Handshake/Authentication
   var reqMessageSelection = RequestMessageSelection()
   if (await client.recvRequestMessageSelection(reqMessageSelection)) == false:
@@ -231,11 +239,11 @@ proc processClient(proxy: SocksServer, client: AsyncSocket): Future[void] {.asyn
     remoteSocket: AsyncSocket = nil
     handleCmdSucceed: bool = false
   case socksReq.cmd.SocksCmd:
-    of CONNECT:
+    of SocksCmd.CONNECT:
       (handleCmdSucceed, remoteSocket) = await proxy.handleSocks5Connect(client, socksReq)
-    of BIND:
+    of SocksCmd.BIND:
       echo "not implemented"
-    of UDP_ASSOCIATE:
+    of SocksCmd.UDP_ASSOCIATE:
       echo "not implemented"
     else:
       echo "not implemented"
@@ -257,6 +265,27 @@ proc processClient(proxy: SocksServer, client: AsyncSocket): Future[void] {.asyn
 
   asyncCheck proxy.pump(remoteSocket, client)
   asyncCheck proxy.pump(client, remoteSocket)
+
+proc processSocks4(proxy: SocksServer, client: AsyncSocket): Future[void] {.async.} =
+  discard
+
+proc processClient(proxy: SocksServer, client: AsyncSocket): Future[void] {.async.} =
+
+  # Check for socks version.
+  var socksVersionRef: SocksVersionRef
+  if (await client.recvSocksVersion(socksVersionRef)) == false:
+    dbg "unknown socks version: ", socksVersionRef.socksVersion
+    client.close()
+    return
+
+  case socksVersionRef.socksVersion.SOCKS_VERSION
+  of SOCKS_V4:
+    await proxy.processSocks4(client)
+  of SOCKS_V5:
+    await proxy.processSocks5(client)
+
+
+
 
 proc loadList(path: string): seq[string] =
   result = @[]

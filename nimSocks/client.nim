@@ -76,9 +76,13 @@ when isMainModule:
   assert true == waitFor sock.doSocksHandshake(
       username="username", 
       password="password", 
-      methods={NO_AUTHENTICATION_REQUIRED, USERNAME_PASSWORD} # the "best" auth supported gets choosen by the server!
+
+      # the "best" auth supported gets choosen by the server!
+      methods={NO_AUTHENTICATION_REQUIRED, USERNAME_PASSWORD} 
       ) 
-  assert true == waitFor sock.doSocksConnect("example.org", Port 80) # instruct the proxy to connect to target host (by tcp)
+
+  # instruct the proxy to connect to target host (by tcp)
+  assert true == waitFor sock.doSocksConnect("example.org", Port 80) 
 
 
   # Then do normal socket operations
