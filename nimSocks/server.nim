@@ -273,14 +273,6 @@ proc processSocks5(proxy: SocksServer, client: AsyncSocket): Future[void] {.asyn
   asyncCheck proxy.pump(remoteSocket, client)
   asyncCheck proxy.pump(client, remoteSocket)
 
-
-proc isSocks4aHack(dst_ip: seq[byte]): bool =
-  return 
-    dst_ip[0] == NULL and 
-    dst_ip[1] == NULL and
-    dst_ip[2] == NULL and
-    dst_ip[3] != NULL
-
 proc handleSocks4Connect(
   proxy: SocksServer,
   client: AsyncSocket,
@@ -293,7 +285,6 @@ proc handleSocks4Connect(
   dbg "host: ", host
   if socksReq.dst_ip.isSocks4aHack():
     dbg "socks4a"
-    # host = socksReq.userid.parseDestAddress(DOMAINNAME)
     host = (await client.recvNullTerminated()).parseDestAddress(DOMAINNAME)
     dbg host
 
@@ -301,13 +292,13 @@ proc handleSocks4Connect(
     host = proxy.staticHosts[host]
   elif proxy.whitelistHost.len == 0 and proxy.whitelistHostFancy.len == 0:
     if proxy.isBlacklisted(host):
-      var socksResp = newSocks4Response(REQUEST_REJECTED_OR_FAILED, socksReq.dst_ip, socksReq.dst_port)
+      var socksResp = newSocks4Response(REQUEST_REJECTED_OR_FAILED)
       await client.send($socksResp)
       echo "Blacklisted host:", host
       return (false, nil)
   else:
     if not proxy.isWhitelisted(host):
-      var socksResp = newSocks4Response(REQUEST_REJECTED_OR_FAILED, socksReq.dst_ip, socksReq.dst_port)
+      var socksResp = newSocks4Response(REQUEST_REJECTED_OR_FAILED)
       await client.send($socksResp)
       echo "Not whitelisted host:", host
       return (false, nil)
@@ -322,7 +313,7 @@ proc handleSocks4Connect(
     connectSuccess = false
 
   if not connectSuccess:
-    var socksResp = newSocks4Response(REQUEST_REJECTED_OR_FAILED, socksReq.dst_ip, socksReq.dst_port)
+    var socksResp = newSocks4Response(REQUEST_REJECTED_OR_FAILED)
     await client.send($socksResp)
     echo "HOST_UNREACHABLE:", host        
     return (false, nil)
@@ -360,12 +351,8 @@ proc processSocks4(proxy: SocksServer, client: AsyncSocket): Future[void] {.asyn
   dbg "Handling command: succeed"
 
   var
-    socksResp = newSocks4Response(REQUEST_GRANTED, socks4Request.dst_ip, socks4Request.dst_port)
-    (hst, prt) = remoteSocket.getFd.getLocalAddr(AF_INET)
-  # socksResp.dst_ip = @[hst.len.byte]
-  socksResp.dst_ip = @[1.byte,2.byte,4.byte,4.byte] #hst.toBytes().parseDestAddress(IP_V4_ADDRESS).toBytes()
-  socksResp.dst_port = prt.unPort
-  echo repr socksResp
+    socksResp = newSocks4Response(REQUEST_GRANTED)
+
   await client.send($socksResp)
 
   asyncCheck proxy.pump(remoteSocket, client)
