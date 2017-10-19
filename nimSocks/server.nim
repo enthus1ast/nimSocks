@@ -5,6 +5,7 @@ import tables
 import strutils
 import blacklistFancy # important, do not delete!!! : )
 import nimSHA2
+# import nimprof
 
 const
   SIZE = 1024 ## max size the buffer could be
@@ -134,7 +135,11 @@ proc pump(proxy: SocksServer, s1, s2: AsyncSocket): Future[void] {.async.} =
       except:
         proxy.transferedBytes = 0 # reset if overflow
 
-      await s2.send(buffer)
+      try:
+        await s2.send(buffer)
+      except:
+        dbg "send excepted"
+        break
     
   if not s1.isClosed: s1.close()
   if not s2.isClosed: s2.close()

@@ -195,6 +195,27 @@ proc port*(t: tuple[h, l: byte]): Port =
 proc unPort*(p: Port): tuple[h, l: byte] =
   return ((p.int div 256).byte, (p.int mod 256).byte)
 
+
+# proc fill(host: seq[byte], port)
+proc parseHost(host: string): tuple[atyp: byte, data: seq[byte]] =
+  var ipaddr: IpAddress
+  try:
+    ipaddr = host.parseIpAddress()
+    case ipaddr.family
+    of IPv4:
+      # echo "IPv4"
+      result.atyp = IP_V4_ADDRESS.byte
+      result.data = ipaddr.address_v4.toBytes()
+      
+    of IPv6:
+      # echo "IPv6"
+      result.atyp = IP_V6_ADDRESS.byte 
+      result.data = ipaddr.address_v6.toBytes()
+  except:
+      # echo "DOMAINNAME"
+      result.atyp = DOMAINNAME.byte
+      result.data = host.len.byte & host.toBytes()
+      
 proc newSocksRequest*(
   cmd: SocksCmd, 
   address: string, 
@@ -207,35 +228,33 @@ proc newSocksRequest*(
   result.version  = socksVersion.byte
   result.cmd = cmd.byte
   result.rsv = RESERVED.byte
-  var ipaddr: IpAddress
-  try:
-    ipaddr = address.parseIpAddress()
-    case ipaddr.family
-    of IPv4:
-      # echo "IPv4"
-      result.atyp = IP_V4_ADDRESS.byte
-      result.dst_addr = ipaddr.address_v4.toBytes()
-      
-    of IPv6:
-      # echo "IPv6"
-      result.atyp = IP_V6_ADDRESS.byte 
-      result.dst_addr = ipaddr.address_v6.toBytes()
-  except:
-      # echo "DOMAINNAME"
-      result.atyp = DOMAINNAME.byte
-      result.dst_addr = address.len.byte & address.toBytes()
-      
+  (result.atyp, result.dst_addr) = address.parseHost()
   result.dst_port = port.unPort()
   echo repr result
 
-proc newSocksResponse*(socksRequest: SocksRequest, rep: REP): SocksResponse =
+proc newSocksResponse*(
+  socksRequest: SocksRequest, 
+  rep: REP,
+  # address: string, 
+  # port: Port,   
+  ): SocksResponse =
   result = SocksResponse()
   result.version = socksRequest.version
   result.rep = rep.byte
   result.rsv = RESERVED.byte
   result.atyp = socksRequest.atyp
-  result.bnd_addr = @[]
-  result.bnd_port = (0.byte,0.byte)
+
+  case result.atyp.ATYP
+  of IP_V4_ADDRESS, IP_V6_ADDRESS:
+    result.bnd_addr = socksRequest.dst_addr
+  of DOMAINNAME:
+    result.bnd_addr = socksRequest.dst_addr.len.byte & socksRequest.dst_addr
+  
+  result.bnd_port = socksRequest.dst_port
+  # (result.atyp, result.bnd_addr) = socksRequest.dst_addr.p.parseHost()
+  # result.bnd_port = port.unPort() 
+  # result.bnd_addr = @[]
+  # result.bnd_port = (0.byte,0.byte)
 
 proc newRequestMessageSelection*(version: SOCKS_VERSION, methods: set[AuthenticationMethod]): RequestMessageSelection =
   result = RequestMessageSelection()
