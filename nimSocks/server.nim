@@ -8,6 +8,7 @@ import tables
 import strutils
 import blacklistFancy # important, do not delete!!! : )
 import nimSHA2
+import reverseDomainNotation
 # import nimprof
 
 const
@@ -28,6 +29,7 @@ type SocksServer = ref object
   serverSocket: AsyncSocket
   staticHosts: Table[string, string]
   logFile: File
+  logFileReverse: File
   users: TableRef[string, SHA512Digest]
   allowedAuthMethods: set[AuthenticationMethod]
   transferedBytes: int 
@@ -53,7 +55,8 @@ proc newSocksServer(
   result.whitelistHostFancy = @[]
   result.serverSocket = newAsyncSocket()
   result.staticHosts = initTable[string, string]()
-  result.logFile = open("hosts.txt", fmWrite)
+  result.logFile = open("hosts.txt", fmAppend)
+  result.logFileReverse = open("hostsReverse.txt", fmAppend)
   result.users = newTable[string, SHA512Digest]()
   result.allowedAuthMethods = allowedAuthMethods
   result.transferedBytes = 0
@@ -147,6 +150,11 @@ proc pump(proxy: SocksServer, s1, s2: AsyncSocket): Future[void] {.async.} =
   if not s1.isClosed: s1.close()
   if not s2.isClosed: s2.close()
 
+proc logHost(proxy: SocksServer, host: string) =
+  proxy.logFile.writeLine(host)
+  proxy.logFileReverse.writeLine(host.reverseNotation() )
+  proxy.logFile.flushFile()
+  proxy.logFileReverse.flushFile()   
 
 proc handleSocks5Connect(
   proxy: SocksServer,
@@ -158,6 +166,7 @@ proc handleSocks5Connect(
     remoteSocket: AsyncSocket
 
   dbg "host: ", host
+  dbg "--->: ", host.reverseNotation()
   if proxy.staticHosts.contains host:
     host = proxy.staticHosts[host]
   elif proxy.whitelistHost.len == 0 and proxy.whitelistHostFancy.len == 0:
@@ -173,8 +182,8 @@ proc handleSocks5Connect(
       echo "Not whitelisted host:", host
       return (false, nil)
 
-  proxy.logFile.writeLine(host)
-  proxy.logFile.flushFile()
+  proxy.logHost host
+ 
 
   var connectSuccess = true
   try:
@@ -291,6 +300,7 @@ proc handleSocks4Connect(
     remoteSocket: AsyncSocket
     
   dbg "host: ", host
+  dbg "--->: ", host.reverseNotation()
   if socksReq.dst_ip.isSocks4aHack():
     dbg "socks4a"
     host = (await client.recvNullTerminated()).parseDestAddress(DOMAINNAME)
@@ -311,8 +321,7 @@ proc handleSocks4Connect(
       echo "Not whitelisted host:", host
       return (false, nil)
 
-  proxy.logFile.writeLine(host)
-  proxy.logFile.flushFile()
+  proxy.logHost (host)
 
   var connectSuccess = true
   try:
@@ -330,18 +339,15 @@ proc handleSocks4Connect(
 
 proc processSocks4(proxy: SocksServer, client: AsyncSocket): Future[void] {.async.} =
   dbg "socks4"
-
   var socks4Request = Socks4Request()
   if (await client.recvSocks4Request(socks4Request)) == false:
     dbg "could not parse Socks4Request: " #, socks4Request
     client.close()
     return
 
-
   var
     remoteSocket: AsyncSocket = nil
     handleCmdSucceed: bool = false
-
   case socks4Request.cmd.Socks4Cmd
   of Socks4Cmd.CONNECT:
     # echo "CONNECT not implemented"
@@ -360,15 +366,12 @@ proc processSocks4(proxy: SocksServer, client: AsyncSocket): Future[void] {.asyn
 
   var
     socksResp = newSocks4Response(REQUEST_GRANTED)
-
   await client.send($socksResp)
 
   asyncCheck proxy.pump(remoteSocket, client)
   asyncCheck proxy.pump(client, remoteSocket)
-  # discard
 
 proc processClient(proxy: SocksServer, client: AsyncSocket): Future[void] {.async.} =
-
   # Check for socks version.
   var socksVersionRef = SocksVersionRef()
   if (await client.recvSocksVersion(socksVersionRef)) == false:
@@ -435,6 +438,9 @@ proc serve(proxy: SocksServer): Future[void] {.async.} =
 
     client.setSockOpt(OptReuseAddr, true)
     asyncCheck proxy.processClient(client)
+
+
+# proc createFilterFiles(proxy: SocksServer)
 
 when not defined release:
   block:
