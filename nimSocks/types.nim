@@ -89,6 +89,7 @@ type
     dst_port*: tuple[h: byte, l: byte]
     dst_ip*: seq[byte] # 4 byte array! # TODO 
     userid*: seq[byte] # null terminated but not captured!
+    # socksDns*: seq[byte]
   Socks4Response* = ref object
     socks4ReplyVersion*: byte 
     cmd*: byte

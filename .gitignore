@@ -9,3 +9,5 @@ client
 types
 *.exe
 *.dll
+profile_results.txt
+*.sh

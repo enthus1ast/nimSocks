@@ -1,3 +1,6 @@
+## TODO
+# - Linger closed connections faster
+
 import net, asyncdispatch, asyncnet, nativesockets
 import types
 import dbg
@@ -12,6 +15,8 @@ const
               ## but since we peek on the sockets,
               ## this buffer gets not filled completely
               ## anyway...
+
+  STALLING_TIMEOUT = 250
 
 type SocksServer = ref object 
   listenPort: Port
@@ -28,13 +33,15 @@ type SocksServer = ref object
   transferedBytes: int 
   socks4Enabled: bool
   socks5Enabled: bool
+  stallingTimeout: int
 
 proc newSocksServer(
   listenPort: Port = Port(DEFAULT_PORT),
   listenHost: string = "",
   allowedAuthMethods: set[AuthenticationMethod] = {USERNAME_PASSWORD},
   socks4Enabled = false, 
-  socks5Enabled = true
+  socks5Enabled = true,
+  stallingTimeout = STALLING_TIMEOUT
 
 ): SocksServer =
   result = SocksServer()
@@ -52,6 +59,7 @@ proc newSocksServer(
   result.transferedBytes = 0
   result.socks4Enabled = socks4Enabled
   result.socks5Enabled = socks5Enabled
+  result.stallingTimeout = stallingTimeout
 
 proc isBlacklisted(proxy: SocksServer, host: string): bool =
   return host in proxy.blacklistHost or proxy.blacklistHostFancy.isListed(host)
@@ -93,19 +101,16 @@ proc addUser(proxy: SocksServer, username: string, password: string) =
 
 
 proc pump(proxy: SocksServer, s1, s2: AsyncSocket): Future[void] {.async.} =
-
 # TODO:
 # from recv docs
 # For buffered sockets this function will attempt to read all the requested data. 
 # It will read this data in BufferSize chunks.
 # For unbuffered sockets this function makes no effort to read all the data requested. 
 # It will return as much data as the operating system gives it.
-
-  while not (s1.isClosed() and s2.isClosed() ):
+  while not (s1.isClosed() and s2.isClosed()):
     var buffer: string
     try:
       ## Peek, so input buffer remains the same!
-      # buffer = await src.recv(SIZE, timeout=2,flags={SocketFlag.Peek, SocketFlag.SafeDisconn})
       buffer = await s1.recv(SIZE, flags={SocketFlag.Peek, SocketFlag.SafeDisconn})
     except:
       buffer = ""
@@ -122,14 +127,12 @@ proc pump(proxy: SocksServer, s1, s2: AsyncSocket): Future[void] {.async.} =
         buffer = ""        
 
     if buffer == "":
-      # if one side closes we close both sides!
-      # s1.close()
-      # s2.close()    
+      # if one side closes we close both sides! 
       break
     else:
-      # write(stdout, buffer)
+      # write(stdout, buffer) ## DBG
 
-      ## Throughtput moitoring
+      ## Throughtput monitoring
       try:
         proxy.transferedBytes.inc(buffer.len)
       except:
@@ -399,7 +402,10 @@ proc dumpThroughput(proxy: SocksServer): Future[void] {.async.} =
   var last = 0
   shallowCopy last, proxy.transferedBytes.int
   while true:
-    echo "throughput: ", ( (proxy.transferedBytes - last) / 1024 ) / (tt / 1000) , " kb/s" 
+    echo "throughput: ", formatSize( 
+      (proxy.transferedBytes - last)  div (tt div 1000),
+      includeSpace = true
+      ), "/s" 
     shallowCopy last, proxy.transferedBytes.int
     await sleepAsync(tt)
 
@@ -411,11 +417,23 @@ proc serve(proxy: SocksServer): Future[void] {.async.} =
   # TODO maybe do this:
   # if (not (NO_AUTHENTICATION_REQUIRED in proxy.allowedAuthMethods)) and (not proxy.socks5Enabled):
   #   raise newException(ValueError, "SOCKS4 does not support authentication, enable SOCKS5 ")
-  
+  var 
+    address: string
+    client: AsyncSocket
+    stalling: bool = false
   while true:
-    let (address, client) = await proxy.serverSocket.acceptAddr()
+    if stalling: await sleepAsync(proxy.stallingTimeout)
+    try:
+      (address, client) = await proxy.serverSocket.acceptAddr()
+      echo "connection from: ", address
+      stalling = false
+    except:
+      dbg "could not accept new connection:"
+      echo getCurrentExceptionMsg()
+      stalling = true
+      continue
+
     client.setSockOpt(OptReuseAddr, true)
-    echo "connection from: ", address
     asyncCheck proxy.processClient(client)
 
 when not defined release:
