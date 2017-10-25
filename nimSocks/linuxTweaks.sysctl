@@ -1,0 +1,10 @@
+# Run this as root!
+# sudo sysctl -plinuxTweaks.sysctl
+# Server & Client
+net.ipv4.tcp_fin_timeout=15
+net.ipv4.ip_local_port_range=15000 61000
+net.ipv4.tcp_tw_recycle=1
+net.ipv4.tcp_tw_reuse=1
+
+# Server
+net.core.somaxconn=1024
