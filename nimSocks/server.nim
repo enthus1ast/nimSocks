@@ -1,5 +1,10 @@
-## TODO
-# - Linger closed connections faster
+const
+  SIZE = 1024 ## max size the buffer could be
+              ## but since we peek on the sockets,
+              ## this buffer gets not filled completely
+              ## anyway...
+
+  STALLING_TIMEOUT = 250 # when full 
 
 import net, asyncdispatch, asyncnet, nativesockets
 import types
@@ -9,17 +14,8 @@ import strutils
 import blacklistFancy # important, do not delete!!! : )
 import nimSHA2
 import reverseDomainNotation
-# import nimprof
 
-const
-  SIZE = 1024 ## max size the buffer could be
-              ## but since we peek on the sockets,
-              ## this buffer gets not filled completely
-              ## anyway...
-
-  STALLING_TIMEOUT = 250
-
-type SocksServer = ref object 
+type SocksServer = ref object
   listenPort: Port
   listenHost: string
   blacklistHost: seq[string]
@@ -32,7 +28,7 @@ type SocksServer = ref object
   logFileReverse: File
   users: TableRef[string, SHA512Digest]
   allowedAuthMethods: set[AuthenticationMethod]
-  transferedBytes: int 
+  transferedBytes: int
   socks4Enabled: bool
   socks5Enabled: bool
   stallingTimeout: int
@@ -41,7 +37,7 @@ proc newSocksServer(
   listenPort: Port = Port(DEFAULT_PORT),
   listenHost: string = "",
   allowedAuthMethods: set[AuthenticationMethod] = {USERNAME_PASSWORD},
-  socks4Enabled = false, 
+  socks4Enabled = false,
   socks5Enabled = true,
   stallingTimeout = STALLING_TIMEOUT
 
@@ -81,7 +77,7 @@ proc authenticate(proxy: SocksServer, username, password: string): bool =
   var
     hashedPassword = initSHA[SHA512]()
     hashFromDb = proxy.users[username]
-  
+
   hashedPassword.update(username)
   hashedPassword.update(password)
 
@@ -106,9 +102,9 @@ proc addUser(proxy: SocksServer, username: string, password: string) =
 proc pump(proxy: SocksServer, s1, s2: AsyncSocket): Future[void] {.async.} =
 # TODO:
 # from recv docs
-# For buffered sockets this function will attempt to read all the requested data. 
+# For buffered sockets this function will attempt to read all the requested data.
 # It will read this data in BufferSize chunks.
-# For unbuffered sockets this function makes no effort to read all the data requested. 
+# For unbuffered sockets this function makes no effort to read all the data requested.
 # It will return as much data as the operating system gives it.
   while not (s1.isClosed() and s2.isClosed()):
     var buffer: string
@@ -120,17 +116,17 @@ proc pump(proxy: SocksServer, s1, s2: AsyncSocket): Future[void] {.async.} =
 
     if buffer.len > 0:
       try:
-        discard await s1.recv(buffer.len) # TODO (better way?) we empty the buffer by reading it 
+        discard await s1.recv(buffer.len) # TODO (better way?) we empty the buffer by reading it
       except:
         buffer = ""
     else:
       try:
         buffer = await s1.recv(1) # we wait for new data...
       except:
-        buffer = ""        
+        buffer = ""
 
     if buffer == "":
-      # if one side closes we close both sides! 
+      # if one side closes we close both sides!
       break
     else:
       # write(stdout, buffer) ## DBG
@@ -146,7 +142,7 @@ proc pump(proxy: SocksServer, s1, s2: AsyncSocket): Future[void] {.async.} =
       except:
         dbg "send excepted"
         break
-    
+
   if not s1.isClosed: s1.close()
   if not s2.isClosed: s2.close()
 
@@ -154,7 +150,7 @@ proc logHost(proxy: SocksServer, host: string) =
   proxy.logFile.writeLine(host)
   proxy.logFileReverse.writeLine(host.reverseNotation() )
   proxy.logFile.flushFile()
-  proxy.logFileReverse.flushFile()   
+  proxy.logFileReverse.flushFile()
 
 proc handleSocks5Connect(
   proxy: SocksServer,
@@ -181,10 +177,7 @@ proc handleSocks5Connect(
       await client.send($socksResp)
       echo "Not whitelisted host:", host
       return (false, nil)
-
   proxy.logHost host
- 
-
   var connectSuccess = true
   try:
     remoteSocket =  await asyncnet.dial(host, socksReq.dst_port.port())
@@ -193,13 +186,11 @@ proc handleSocks5Connect(
     #   connectSuccess = false
   except:
     connectSuccess = false
-
   if not connectSuccess:
     var socksResp = newSocksResponse(socksReq, HOST_UNREACHABLE)
     await client.send($socksResp)
-    echo "HOST_UNREACHABLE:", host        
+    echo "HOST_UNREACHABLE:", host
     return (false, nil)
-
   return (true, remoteSocket)
 
 proc processSocks5(proxy: SocksServer, client: AsyncSocket): Future[void] {.async.} =
@@ -209,7 +200,6 @@ proc processSocks5(proxy: SocksServer, client: AsyncSocket): Future[void] {.asyn
     dbg "could not parse RequestMessageSelection: ", reqMessageSelection.version
     client.close()
     return
-
   var respMessageSelection = ResponseMessageSelection()
   respMessageSelection.version = reqMessageSelection.version
 
@@ -225,7 +215,7 @@ proc processSocks5(proxy: SocksServer, client: AsyncSocket): Future[void] {.asyn
     dbg "Got user password Authentication"
     respMessageSelection.selectedMethod = USERNAME_PASSWORD.byte
     await client.send($respMessageSelection)
-
+    
     var socksUserPasswordReq = SocksUserPasswordRequest()
     if (await client.recvSocksUserPasswordRequest(socksUserPasswordReq)) == false:
       client.close()
@@ -243,7 +233,7 @@ proc processSocks5(proxy: SocksServer, client: AsyncSocket): Future[void] {.asyn
       await client.send($socksUserPasswordResp)
       client.close()
       return
-    
+
   elif NO_AUTHENTICATION_REQUIRED.byte in reqMessageSelection.methods:
     respMessageSelection.selectedMethod = NO_AUTHENTICATION_REQUIRED.byte
     await client.send($respMessageSelection)
@@ -281,7 +271,7 @@ proc processSocks5(proxy: SocksServer, client: AsyncSocket): Future[void] {.asyn
 
   var
     socksResp = newSocksResponse(socksReq, SUCCEEDED)
-    (hst, prt) = remoteSocket.getFd.getLocalAddr(AF_INET)
+    (hst, prt) = remoteSocket.getFd.getLocalAddr(Domain.AF_INET)
   socksResp.bnd_addr = @[hst.len.byte]
   socksResp.bnd_addr &= hst.toBytes()
   socksResp.bnd_port = prt.unPort
@@ -298,7 +288,7 @@ proc handleSocks4Connect(
   var
     host = socksReq.dst_ip.parseDestAddress(IP_V4_ADDRESS)
     remoteSocket: AsyncSocket
-    
+
   dbg "host: ", host
   dbg "--->: ", host.reverseNotation()
   if socksReq.dst_ip.isSocks4aHack():
@@ -332,7 +322,7 @@ proc handleSocks4Connect(
   if not connectSuccess:
     var socksResp = newSocks4Response(REQUEST_REJECTED_OR_FAILED)
     await client.send($socksResp)
-    echo "HOST_UNREACHABLE:", host        
+    echo "HOST_UNREACHABLE:", host
     return (false, nil)
 
   return (true, remoteSocket)
@@ -381,13 +371,13 @@ proc processClient(proxy: SocksServer, client: AsyncSocket): Future[void] {.asyn
 
   case socksVersionRef.socksVersion.SOCKS_VERSION
   of SOCKS_V4:
-    if not proxy.socks4Enabled: 
+    if not proxy.socks4Enabled:
       client.close()
       return
     await proxy.processSocks4(client)
   of SOCKS_V5:
     if not proxy.socks5Enabled:
-      client.close() 
+      client.close()
       return
     await proxy.processSocks5(client)
 
@@ -405,10 +395,10 @@ proc dumpThroughput(proxy: SocksServer): Future[void] {.async.} =
   var last = 0
   shallowCopy last, proxy.transferedBytes.int
   while true:
-    echo "throughput: ", formatSize( 
+    echo "throughput: ", formatSize(
       (proxy.transferedBytes - last)  div (tt div 1000),
       includeSpace = true
-      ), "/s" 
+      ), "/s"
     shallowCopy last, proxy.transferedBytes.int
     await sleepAsync(tt)
 
@@ -420,7 +410,7 @@ proc serve(proxy: SocksServer): Future[void] {.async.} =
   # TODO maybe do this:
   # if (not (NO_AUTHENTICATION_REQUIRED in proxy.allowedAuthMethods)) and (not proxy.socks5Enabled):
   #   raise newException(ValueError, "SOCKS4 does not support authentication, enable SOCKS5 ")
-  var 
+  var
     address: string
     client: AsyncSocket
     stalling: bool = false
@@ -438,9 +428,6 @@ proc serve(proxy: SocksServer): Future[void] {.async.} =
 
     client.setSockOpt(OptReuseAddr, true)
     asyncCheck proxy.processClient(client)
-
-
-# proc createFilterFiles(proxy: SocksServer)
 
 when not defined release:
   block:
