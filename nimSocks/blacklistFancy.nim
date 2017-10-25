@@ -24,10 +24,17 @@ proc matched*(bentry: BlacklistEntry, str: string): bool =
 
 proc loadListFromStr*(str: string): seq[BlacklistEntry] =
   result = @[]
+
+  var idx = 0
   for ln in str.splitLines():
+    idx.inc
     if ln.strip().len == 0: continue
     if ln.strip().startsWith('#'): continue
-    result.add parseBlacklistLine(ln)
+    let be = parseBlacklistLine(ln)
+    if be.line == "":
+      echo "Empty rule on line:", idx
+    else:
+      result.add be
 
 proc loadListFancy*(path: string): seq[BlacklistEntry] =
   return loadListFromStr(readFile(path))
