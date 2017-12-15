@@ -1,10 +1,11 @@
 const
-  SIZE = 1024 ## max size the buffer could be
+  SIZE = 87_380 ## max size the buffer could be
               ## but since we peek on the sockets,
               ## this buffer gets not filled completely
               ## anyway...
-
+  # SIZE = 6291456
   STALLING_TIMEOUT = 250 # when full 
+  # ENABLE_MONITORING = true # enables the throughput monitoring
 
 import net, asyncdispatch, asyncnet, nativesockets
 import types
@@ -14,6 +15,9 @@ import strutils
 import blacklistFancy # important, do not delete!!! : )
 import nimSHA2
 import reverseDomainNotation
+
+# when ENABLE_MONITORING:
+import ../byteCounter
 
 type SocksServer = ref object
   listenPort: Port
@@ -32,6 +36,7 @@ type SocksServer = ref object
   socks4Enabled: bool
   socks5Enabled: bool
   stallingTimeout: int
+  byteCounter: ByteCounter
 
 proc newSocksServer(
   listenPort: Port = Port(DEFAULT_PORT),
@@ -59,6 +64,7 @@ proc newSocksServer(
   result.socks4Enabled = socks4Enabled
   result.socks5Enabled = socks5Enabled
   result.stallingTimeout = stallingTimeout
+  result.byteCounter = newByteCounter()
 
 proc isBlacklisted(proxy: SocksServer, host: string): bool =
   return host in proxy.blacklistHost or proxy.blacklistHostFancy.isListed(host)
@@ -99,39 +105,43 @@ proc addUser(proxy: SocksServer, username: string, password: string) =
   proxy.users.add(username, hashedPassword.final())
 
 
-proc pump(proxy: SocksServer, s1, s2: AsyncSocket): Future[void] {.async.} =
+proc pump(proxy: SocksServer, s1, s2: AsyncSocket, direction: Direction, ressource: seq[byte]): Future[void] {.async.} =
 # TODO:
 # from recv docs
 # For buffered sockets this function will attempt to read all the requested data.
 # It will read this data in BufferSize chunks.
 # For unbuffered sockets this function makes no effort to read all the data requested.
 # It will return as much data as the operating system gives it.
+  var buffer = newStringOfCap( SIZE )
   while not (s1.isClosed() and s2.isClosed()):
-    var buffer: string
+    buffer.setLen 0
     try:
       ## Peek, so input buffer remains the same!
-      buffer = await s1.recv(SIZE, flags={SocketFlag.Peek, SocketFlag.SafeDisconn})
+      buffer.add await s1.recv(SIZE, flags={SocketFlag.Peek, SocketFlag.SafeDisconn})
     except:
-      buffer = ""
+      buffer.setLen 0 
 
     if buffer.len > 0:
       try:
         discard await s1.recv(buffer.len) # TODO (better way?) we empty the buffer by reading it
       except:
-        buffer = ""
+        buffer.setLen 0
     else:
       try:
         buffer = await s1.recv(1) # we wait for new data...
       except:
-        buffer = ""
+        buffer.setLen 0
 
-    if buffer == "":
+    if buffer.len == 0:
       # if one side closes we close both sides!
       break
     else:
       # write(stdout, buffer) ## DBG
 
       ## Throughtput monitoring
+
+      proxy.byteCounter.count($ressource, direction, buffer.len)
+
       try:
         proxy.transferedBytes.inc(buffer.len)
       except:
@@ -277,8 +287,8 @@ proc processSocks5(proxy: SocksServer, client: AsyncSocket): Future[void] {.asyn
   socksResp.bnd_port = prt.unPort
   await client.send($socksResp)
 
-  asyncCheck proxy.pump(remoteSocket, client)
-  asyncCheck proxy.pump(client, remoteSocket)
+  asyncCheck proxy.pump(remoteSocket, client, downstream ,socksReq.dst_addr )
+  asyncCheck proxy.pump(client, remoteSocket, upstream   ,socksReq.dst_addr )
 
 proc handleSocks4Connect(
   proxy: SocksServer,
@@ -358,8 +368,8 @@ proc processSocks4(proxy: SocksServer, client: AsyncSocket): Future[void] {.asyn
     socksResp = newSocks4Response(REQUEST_GRANTED)
   await client.send($socksResp)
 
-  asyncCheck proxy.pump(remoteSocket, client)
-  asyncCheck proxy.pump(client, remoteSocket)
+  asyncCheck proxy.pump(remoteSocket, client, downstream , socks4Request.dst_ip )
+  asyncCheck proxy.pump(client, remoteSocket, upstream   , socks4Request.dst_ip )
 
 proc processClient(proxy: SocksServer, client: AsyncSocket): Future[void] {.async.} =
   # Check for socks version.
@@ -400,6 +410,10 @@ proc dumpThroughput(proxy: SocksServer): Future[void] {.async.} =
       includeSpace = true
       ), "/s"
     shallowCopy last, proxy.transferedBytes.int
+    ##
+    # proxy.byteCounter.listRessources()
+    proxy.byteCounter.dumpThroughput()
+    ##
     await sleepAsync(tt)
 
 proc serve(proxy: SocksServer): Future[void] {.async.} =
@@ -439,6 +453,7 @@ when not defined release:
     assert proxy.authenticate(" hans", "peter ") == false
     assert proxy.authenticate("as hans", "dd cpeter ") == false
 
+
 when isMainModule:
   var proxy = newSocksServer()
   proxy.socks4Enabled = true # no auth!
@@ -455,4 +470,5 @@ when isMainModule:
   proxy.staticHosts.add("foo.loc", "example.org")
   asyncCheck proxy.serve()
   asyncCheck proxy.dumpThroughput()
+  # asyncCheck proxy.dumpThroughput()
   runForever()
