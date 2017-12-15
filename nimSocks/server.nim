@@ -17,7 +17,7 @@ import nimSHA2
 import reverseDomainNotation
 
 # when ENABLE_MONITORING:
-import ../byteCounter
+import byteCounter
 
 type SocksServer = ref object
   listenPort: Port
