@@ -2,9 +2,9 @@ import net, asyncdispatch, asyncnet, nativesockets
 import types
 import dbg
 
-type SocksClient = object 
-  clientSocket: AsyncSocket
-  allowedAuthMethods: set[AuthenticationMethod]
+# type SocksClient = object 
+#   clientSocket: AsyncSocket
+#   allowedAuthMethods: set[AuthenticationMethod]
 
 # proc newSocksClient(
 #   clientSocket: AsyncSocket,
@@ -14,8 +14,7 @@ type SocksClient = object
 #   result.clientSocket = clientSocket
 #   result.allowedAuthMethods = allowedAuthMethods
 
-
-proc doSocksHandshake(
+proc doSocksHandshake*(
   clientSocket: AsyncSocket,
   methods: set[AuthenticationMethod] = {NO_AUTHENTICATION_REQUIRED},
   username: string = "",
@@ -44,14 +43,13 @@ proc doSocksHandshake(
       return false
       # SUCCEEDED = 0x00
       # FAILED = 0x01    
-
     return true
 
   of NO_ACCEPTABLE_METHODS:
     return false
   else: return false
 
-proc doSocksConnect(clientSocket: AsyncSocket, targetHost: string, targetPort: Port) : Future[bool] {.async.} =
+proc doSocksConnect*(clientSocket: AsyncSocket, targetHost: string, targetPort: Port) : Future[bool] {.async.} =
   var socksReq = newSocksRequest(CONNECT, targetHost, targetPort)
   await clientSocket.send($socksReq)
   var socksResp = SocksResponse()

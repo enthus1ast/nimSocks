@@ -72,6 +72,16 @@ proc isBlacklisted(proxy: SocksServer, host: string): bool =
 proc isWhitelisted(proxy: SocksServer, host: string): bool =
   return host in proxy.whitelistHost or proxy.whitelistHostFancy.isListed(host)
 
+proc isListed(proxy: SocksServer, host: string): bool = 
+  if proxy.whitelistHost.len == 0 and proxy.whitelistHostFancy.len == 0:
+    if proxy.isBlacklisted(host):
+      dbg "Blacklisted host:", host
+      return true
+  else:
+    if not proxy.isWhitelisted(host):
+      echo "Not whitelisted host:", host
+      return true
+
 proc authenticate(proxy: SocksServer, username, password: string): bool =
   result = false
   dbg "username: ", username
@@ -162,6 +172,11 @@ proc logHost(proxy: SocksServer, host: string) =
   proxy.logFile.flushFile()
   proxy.logFileReverse.flushFile()
 
+proc getStaticRewrite(proxy: SocksServer, host: string): string =
+  if proxy.staticHosts.contains host:
+    return proxy.staticHosts[host]
+  return host
+
 proc handleSocks5Connect(
   proxy: SocksServer,
   client: AsyncSocket,
@@ -173,20 +188,11 @@ proc handleSocks5Connect(
 
   dbg "host: ", host
   dbg "--->: ", host.reverseNotation()
-  if proxy.staticHosts.contains host:
-    host = proxy.staticHosts[host]
-  elif proxy.whitelistHost.len == 0 and proxy.whitelistHostFancy.len == 0:
-    if proxy.isBlacklisted(host):
+  host = proxy.getStaticRewrite(host)
+  if proxy.isListed(host):
       var socksResp = newSocksResponse(socksReq, CONNECTION_NOT_ALLOWED_BY_RULESET)
-      await client.send($socksResp)
-      echo "Blacklisted host:", host
-      return (false, nil)
-  else:
-    if not proxy.isWhitelisted(host):
-      var socksResp = newSocksResponse(socksReq, CONNECTION_NOT_ALLOWED_BY_RULESET)
-      await client.send($socksResp)
-      echo "Not whitelisted host:", host
-      return (false, nil)
+      await client.send($socksResp)    
+      return (false, nil)  
   proxy.logHost host
   var connectSuccess = true
   try:
@@ -306,21 +312,11 @@ proc handleSocks4Connect(
     host = (await client.recvNullTerminated()).parseDestAddress(DOMAINNAME)
     dbg host
 
-  if proxy.staticHosts.contains host:
-    host = proxy.staticHosts[host]
-  elif proxy.whitelistHost.len == 0 and proxy.whitelistHostFancy.len == 0:
-    if proxy.isBlacklisted(host):
+  host = proxy.getStaticRewrite(host)
+  if proxy.isListed(host):
       var socksResp = newSocks4Response(REQUEST_REJECTED_OR_FAILED)
-      await client.send($socksResp)
-      echo "Blacklisted host:", host
+      await client.send($socksResp)    
       return (false, nil)
-  else:
-    if not proxy.isWhitelisted(host):
-      var socksResp = newSocks4Response(REQUEST_REJECTED_OR_FAILED)
-      await client.send($socksResp)
-      echo "Not whitelisted host:", host
-      return (false, nil)
-
   proxy.logHost (host)
 
   var connectSuccess = true

@@ -23,20 +23,11 @@ proc reverseNotation*(hostname: string): string =
 
 when isMainModule:
   ## Naive module for performance-testing
-  import times
-
-  template timeIt*(name: string, p: untyped): stmt =
-    ## Performs timing of the block call, and makes output into stdout.
-    let timeStart = cpuTime()
-    for idx in 0..10_000:
-      p
-    echo name, ": ", (cpuTime() - timeStart) * 1000000
-
+  import dbg
   import strutils
   import algorithm
   proc reverseDomain(domain: string): string =
     return domain.split(".").reversed().join(".")
-
 
   timeIt "fast":
     discard reverseNotation("foo.baa.foo.baa.foo.baa")
