@@ -20,17 +20,17 @@ proc reverseNotation*(hostname: string): string =
     buf: string = ""
     ch: char
   while true:
+    if pos == hostname.len: 
+      result.insert(buf,0)
+      break
     ch = hostname[pos]
-    if ch == '.' or pos == hostname.len:
-        if pos < hostname.len:
-            buf.insert ".", 0
+    if ch == '.':
+        buf.insert $ch, 0
         result.insert(buf,0)
         buf.setLen 0
     else:
         buf.add ch
-    if pos == hostname.len: break
     pos.inc
-
 
 when isMainModule:
   ## Naive module for performance-testing
@@ -45,11 +45,10 @@ when isMainModule:
 
   timeIt "slow":
     discard reverseDomain("foo.baa.foo.baa.foo.baa")
-  # echoAssert
 
 when isMainModule:
-    echo "server.example.loc".reverseNotation
-    echo "server.example.loc.".reverseNotation
+    # echo "server.example.loc".reverseNotation
+    # echo "server.example.loc.".reverseNotation
     assert  "foo".reverseNotation == "foo"
     assert  "foo.baa".reverseNotation == "baa.foo"
     assert  "foo.baa.baz".reverseNotation == "baz.baa.foo"
