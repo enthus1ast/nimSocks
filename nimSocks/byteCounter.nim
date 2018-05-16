@@ -42,13 +42,13 @@ proc globalTransferedBytes*(byteCounter: ByteCounter): int =
 
 proc `$`*(byteCounter: ByteCounter): string =
   result = ""
-  result.add "#".repeat(30) & "\n"
-  result.add "globalUpBytes: " & $byteCounter.globalUpBytes  & "\n"
-  result.add "globalDownBytes: " & $byteCounter.globalDownBytes  & "\n"
-  result.add "globalTransferedBytes: " & $byteCounter.globalTransferedBytes()  & "\n"
-  # result.add "globalUpBytes: ", byteCounter.globalUpBytes , "\n"
-  # result.add "globalUpBytes: ", byteCounter.globalUpBytes , "\n"
-  result.add "^".repeat(30) & "\n"
+  result.add "#".repeat(30) & "\p"
+  result.add "globalUpBytes: " & $byteCounter.globalUpBytes & "\p"
+  result.add "globalDownBytes: " & $byteCounter.globalDownBytes & "\p"
+  result.add "globalTransferedBytes: " & $byteCounter.globalTransferedBytes() & "\p"
+  # result.add "globalUpBytes: ", byteCounter.globalUpBytes , "\p"
+  # result.add "globalUpBytes: ", byteCounter.globalUpBytes , "\p"
+  result.add "^".repeat(30) & "\p"
 
 proc ressourceInfo*(byteCounter: ByteCounter, ressource: string): RessourceInfo =
   result.up = byteCounter.ressourceTable[(ressource, upstream)]
@@ -61,14 +61,14 @@ proc listRessources*(byteCounter: ByteCounter) =
 proc dumpThroughput*(byteCounter: ByteCounter, perSeconds = 10) =
   var str: string = ""
 
-  str.add "Througput ( " & $perSeconds & " seconds ):\n"
+  str.add "Througput ( " & $perSeconds & " seconds ):\p"
   for k, v in byteCounter.ressourceTableThrougput.pairs():
     # case k[1]
     # of upstream:
     #   str.add " <== "
     # of downstream:
     #   str.add " ==> "
-    str.add "$#\t$#/s \t$# \n" % [($k[1]).align(10), (v.div perSeconds).formatSize.align(8), $k[0]]#   "\t -", k[0], " =" , k[1] , "=> " , v.formatSize
+    str.add "$#\t$#/s \t$# \p" % [($k[1]).align(10), (v.div perSeconds).formatSize.align(8), $k[0]]#   "\t -", k[0], " =" , k[1] , "=> " , v.formatSize
   echo str
   byteCounter.ressourceTableThrougput.clear()
 

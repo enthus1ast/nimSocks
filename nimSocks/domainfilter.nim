@@ -56,6 +56,17 @@ proc isListed*(bentries: seq[BlacklistEntry], host: string): bool =
     if bentry.matched(host) == true: return true
   return false
 
+
+# The 'legacy' filter functions
+proc loadList*(path: string): seq[string] =
+  result = @[]
+  var lineBuf = ""
+  for line in lines path:
+    lineBuf = line.strip()
+    if lineBuf.startsWith('#'): continue
+    result.add lineBuf
+
+
 when isMainModule:
   assert parseBlacklistLine("sta foo") == (STA, "foo" )
   assert parseBlacklistLine("sta  foo")  == (STA, "foo" )
@@ -65,3 +76,4 @@ when isMainModule:
   var blackList = loadListFancy("blacklistFancy.txt")
   for bentry in blackList:
     echo $bentry, " | LISTED => ", bentry.matched("www2.facebook.com")
+

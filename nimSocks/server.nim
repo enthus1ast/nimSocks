@@ -10,54 +10,19 @@
 #
 ## SOCKS4/4a/5 proxy server
 
-const
-  SIZE = 87_380 ## max size the buffer could be
-              ## but since we peek on the sockets,
-              ## this buffer gets not filled completely
-              ## anyway...
-  # SIZE = 6291456
-  STALLING_TIMEOUT = 250 # when full: wait then try again
-  # ENABLE_MONITORING = true # enables the throughput monitoring
-
-import net, asyncdispatch, asyncnet, nativesockets
-import types
-import dbg
-import tables
-import strutils
-import blacklistFancy # important, do not delete!!! : )
-import nimSHA2
+import asyncdispatch, asyncnet, nativesockets, tables, dbg
+import serverTypes, pump
 import reverseDomainNotation
 
 # when ENABLE_MONITORING:
 import byteCounter
 
-type SocksServer = ref object
-  listenPort: Port
-  listenHost: string
-  blacklistHost: seq[string]
-  blacklistHostFancy: seq[BlacklistEntry]
-  whitelistHost: seq[string]
-  whitelistHostFancy: seq[BlacklistEntry]
-  serverSocket: AsyncSocket
-  staticHosts: Table[string, string]
-  logFile: File
-  logFileReverse: File
-  users: TableRef[string, SHA512Digest]
-  allowedAuthMethods: set[AuthenticationMethod]
-  transferedBytes: int
-  socks4Enabled: bool
-  socks5Enabled: bool
-  stallingTimeout: int
-  byteCounter: ByteCounter
-
 proc newSocksServer(
-  listenPort: Port = Port(DEFAULT_PORT),
-  listenHost: string = "",
-  allowedAuthMethods: set[AuthenticationMethod] = {USERNAME_PASSWORD},
-  socks4Enabled = false,
-  socks5Enabled = true,
-  stallingTimeout = STALLING_TIMEOUT
-
+    listenPort: Port = Port(DEFAULT_PORT),
+    listenHost: string = "",
+    allowedAuthMethods: set[AuthenticationMethod] = {USERNAME_PASSWORD},
+    socks4Enabled = false,
+    socks5Enabled = true,
 ): SocksServer =
   result = SocksServer()
   result.listenPort = listenPort
@@ -72,10 +37,11 @@ proc newSocksServer(
   result.logFileReverse = open("hostsReverse.txt", fmAppend)
   result.users = newTable[string, SHA512Digest]()
   result.allowedAuthMethods = allowedAuthMethods
+  result.allowedSocksCmds = {CONNECT}
   result.transferedBytes = 0
   result.socks4Enabled = socks4Enabled
   result.socks5Enabled = socks5Enabled
-  result.stallingTimeout = stallingTimeout
+  result.stallingTimeout = STALLING_TIMEOUT
   result.byteCounter = newByteCounter()
 
 proc isBlacklisted(proxy: SocksServer, host: string): bool =
@@ -126,55 +92,6 @@ proc addUser(proxy: SocksServer, username: string, password: string) =
 
   proxy.users.add(username, hashedPassword.final())
 
-proc pump(proxy: SocksServer, s1, s2: AsyncSocket, direction: Direction, ressource: seq[byte]): Future[void] {.async.} =
-# TODO:
-# from recv docs
-# For buffered sockets this function will attempt to read all the requested data.
-# It will read this data in BufferSize chunks.
-# For unbuffered sockets this function makes no effort to read all the data requested.
-# It will return as much data as the operating system gives it.
-  var buffer = newStringOfCap(SIZE)
-  while not (s1.isClosed() and s2.isClosed()):
-    buffer.setLen 0
-    try:
-      ## Peek, so input buffer remains the same!
-      buffer.add await s1.recv(SIZE, flags={SocketFlag.Peek, SocketFlag.SafeDisconn})
-    except:
-      buffer.setLen 0 
-
-    if buffer.len > 0:
-      try:
-        discard await s1.recv(buffer.len) # TODO (better way?) we empty the buffer by reading it
-      except:
-        buffer.setLen 0
-    else:
-      try:
-        buffer = await s1.recv(1) # we wait for new data...
-      except:
-        buffer.setLen 0
-
-    if buffer.len == 0:
-      # if one side closes we close both sides!
-      break
-    else:
-      # write(stdout, buffer) ## DBG
-      ## Throughtput monitoring
-      proxy.byteCounter.count($ressource, direction, buffer.len)
-
-      try:
-        proxy.transferedBytes.inc(buffer.len)
-      except:
-        proxy.transferedBytes = 0 # reset if overflow
-
-      try:
-        await s2.send(buffer)
-      except:
-        dbg "send excepted"
-        break
-
-  if not s1.isClosed: s1.close()
-  if not s2.isClosed: s2.close()
-
 proc logHost(proxy: SocksServer, host: string) =
   proxy.logFile.writeLine(host)
   proxy.logFileReverse.writeLine(host.reverseNotation() )
@@ -223,7 +140,6 @@ proc processSocks5(proxy: SocksServer, client: AsyncSocket): Future[void] {.asyn
   var reqMessageSelection = RequestMessageSelection()
   if (await client.recvRequestMessageSelection(reqMessageSelection)) == false:
     dbg "could not parse RequestMessageSelection: ", reqMessageSelection.version
-    client.close()
     return
   var respMessageSelection = ResponseMessageSelection()
   respMessageSelection.version = reqMessageSelection.version
@@ -232,7 +148,6 @@ proc processSocks5(proxy: SocksServer, client: AsyncSocket): Future[void] {.asyn
   if not (reqMessageSelection.methods in proxy.allowedAuthMethods):
     respMessageSelection.selectedMethod = NO_ACCEPTABLE_METHODS.byte
     await client.send($respMessageSelection)
-    client.close()
     return
 
   # Chose authentication methods
@@ -243,7 +158,6 @@ proc processSocks5(proxy: SocksServer, client: AsyncSocket): Future[void] {.asyn
     
     var socksUserPasswordReq = SocksUserPasswordRequest()
     if (await client.recvSocksUserPasswordRequest(socksUserPasswordReq)) == false:
-      client.close()
       return
 
     var socksUserPasswordResp = SocksUserPasswordResponse()
@@ -256,7 +170,6 @@ proc processSocks5(proxy: SocksServer, client: AsyncSocket): Future[void] {.asyn
       socksUserPasswordResp.status = UserPasswordStatus.FAILED.byte
       dbg "Sending bad: ", repr($socksUserPasswordResp)
       await client.send($socksUserPasswordResp)
-      client.close()
       return
 
   elif NO_AUTHENTICATION_REQUIRED.byte in reqMessageSelection.methods:
@@ -264,33 +177,35 @@ proc processSocks5(proxy: SocksServer, client: AsyncSocket): Future[void] {.asyn
     await client.send($respMessageSelection)
   else:
     dbg "Not supported authentication method"
-    client.close()
     return
 
   # client sends what we should do
   var socksReq = SocksRequest()
   if (await client.recvSocksRequest(socksReq)) == false:
     dbg "Could not parse socksReq"
-    client.close()
     return
 
   var
     remoteSocket: AsyncSocket = nil
     handleCmdSucceed: bool = false
+  if socksReq.cmd.SocksCmd notin proxy.allowedSocksCmds: 
+    dbg "proxy command not allowed"
+    return
   case socksReq.cmd.SocksCmd:
     of SocksCmd.CONNECT:
       (handleCmdSucceed, remoteSocket) = await proxy.handleSocks5Connect(client, socksReq)
     of SocksCmd.BIND:
       echo "BIND not implemented"
+      return
     of SocksCmd.UDP_ASSOCIATE:
       echo "UDP_ASSOCIATE not implemented"
+      return
     else:
       echo "not implemented"
       return
 
   if handleCmdSucceed == false:
     dbg "Handling command: failed"
-    client.close()
     return
   dbg "Handling command: succeed"
 
@@ -347,12 +262,14 @@ proc processSocks4(proxy: SocksServer, client: AsyncSocket): Future[void] {.asyn
   var socks4Request = Socks4Request()
   if (await client.recvSocks4Request(socks4Request)) == false:
     dbg "could not parse Socks4Request: " #, socks4Request
-    client.close()
     return
 
   var
     remoteSocket: AsyncSocket = nil
     handleCmdSucceed: bool = false
+  if socks4Request.cmd.SocksCmd notin proxy.allowedSocksCmds: 
+    dbg "proxy command not allowed"
+    return    
   case socks4Request.cmd.Socks4Cmd
   of Socks4Cmd.CONNECT:
     # echo "CONNECT not implemented"
@@ -365,7 +282,6 @@ proc processSocks4(proxy: SocksServer, client: AsyncSocket): Future[void] {.asyn
 
   if handleCmdSucceed == false:
     dbg "Handling command: failed"
-    client.close()
     return
   dbg "Handling command: succeed"
 
@@ -386,40 +302,12 @@ proc processClient(proxy: SocksServer, client: AsyncSocket): Future[void] {.asyn
 
   case socksVersionRef.socksVersion.SOCKS_VERSION
   of SOCKS_V4:
-    if not proxy.socks4Enabled:
-      client.close()
-      return
-    await proxy.processSocks4(client)
+    if proxy.socks4Enabled:
+      await proxy.processSocks4(client)
   of SOCKS_V5:
-    if not proxy.socks5Enabled:
-      client.close()
-      return
-    await proxy.processSocks5(client)
-
-proc loadList(path: string): seq[string] =
-  result = @[]
-  var lineBuf = ""
-  for line in lines path:
-    lineBuf = line.strip()
-    if lineBuf.startsWith('#'): continue
-    result.add lineBuf
-
-proc dumpThroughput(proxy: SocksServer): Future[void] {.async.} =
-  ## TODO
-  let tt = 10_000
-  var last = 0
-  shallowCopy last, proxy.transferedBytes.int
-  while true:
-    echo "throughput: ", formatSize(
-      (proxy.transferedBytes - last)  div (tt div 1000),
-      includeSpace = true
-      ), "/s"
-    shallowCopy last, proxy.transferedBytes.int
-    ##
-    # proxy.byteCounter.listRessources()
-    proxy.byteCounter.dumpThroughput()
-    ##
-    await sleepAsync(tt)
+    if proxy.socks5Enabled:
+      await proxy.processSocks5(client)
+  client.close()
 
 # proc connect(proxy: SocksServer, host: string, port: int): Future[bool] {.async.} = 
 #   ## instead of listening on a port we connect to a remote host/port
@@ -463,7 +351,9 @@ when not defined release:
     assert proxy.authenticate("as hans", "dd cpeter ") == false
 
 when isMainModule:
+  import throughput
   var proxy = newSocksServer()
+  echo "SOCKS Proxy listens on:", proxy.listenPort
   proxy.socks4Enabled = true # no auth!
   proxy.allowedAuthMethods = {USERNAME_PASSWORD, NO_AUTHENTICATION_REQUIRED}
   proxy.addUser("hans", "peter")
