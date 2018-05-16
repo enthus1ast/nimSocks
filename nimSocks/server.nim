@@ -10,6 +10,12 @@
 #
 ## SOCKS4/4a/5 proxy server
 
+## Known Bugs
+## Nothing works :) use another server
+## - ipv6 on socks4 crashes server
+
+
+
 import asyncdispatch, asyncnet, nativesockets, tables, dbg
 import serverTypes, pump
 import reverseDomainNotation
@@ -234,19 +240,23 @@ proc handleSocks4Connect(
   if socksReq.dst_ip.isSocks4aHack():
     dbg "socks4a"
     host = (await client.recvNullTerminated()).parseDestAddress(DOMAINNAME)
-    dbg host
+    dbg "REALHOST:",host
 
   host = proxy.getStaticRewrite(host)
   if proxy.isListed(host):
-      var socksResp = newSocks4Response(REQUEST_REJECTED_OR_FAILED)
-      await client.send($socksResp)    
-      return (false, nil)
+    dbg "REQUEST_REJECTED_OR_FAILED"
+    var socksResp = newSocks4Response(REQUEST_REJECTED_OR_FAILED)
+    await client.send($socksResp)    
+    return (false, nil)
   proxy.logHost (host)
 
   var connectSuccess = true
   try:
     remoteSocket =  await asyncnet.dial(host, socksReq.dst_port.port())
+    await remoteSocket.send("ARSCH")
   except:
+    dbg "DIAL FAILED"
+    dbg getCurrentExceptionMsg()
     connectSuccess = false
 
   if not connectSuccess:
@@ -276,6 +286,7 @@ proc processSocks4(proxy: SocksServer, client: AsyncSocket): Future[void] {.asyn
     (handleCmdSucceed, remoteSocket) = await proxy.handleSocks4Connect(client, socks4Request)
   of Socks4Cmd.BIND:
     echo "BIND not implemented"
+    return
   else:
     echo "not implemented"
     return
@@ -307,7 +318,9 @@ proc processClient(proxy: SocksServer, client: AsyncSocket): Future[void] {.asyn
   of SOCKS_V5:
     if proxy.socks5Enabled:
       await proxy.processSocks5(client)
-  client.close()
+  
+  if not client.isClosed:
+    client.close()
 
 # proc connect(proxy: SocksServer, host: string, port: int): Future[bool] {.async.} = 
 #   ## instead of listening on a port we connect to a remote host/port
@@ -367,6 +380,6 @@ when isMainModule:
   # proxy.staticHosts.add("foo.loc", "example.org")
   proxy.staticHosts.add("foo.loc", "example.org")
   asyncCheck proxy.serve()
-  asyncCheck proxy.dumpThroughput()
+  # asyncCheck proxy.dumpThroughput()
   # asyncCheck proxy.dumpThroughput()
   runForever()
