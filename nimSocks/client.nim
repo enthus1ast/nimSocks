@@ -1,3 +1,14 @@
+#
+#
+#                  nimSocks
+#          SOCKS4/4a/5 proxy server
+#            (c) Copyright 2018
+#        David Krause, Tobias Freitag
+#
+#    See the file "LICENSE", included in this
+#    distribution, for details about the copyright.
+## SOCKS4/4a/5 proxy client library
+
 import net, asyncdispatch, asyncnet, nativesockets
 import types
 import dbg
@@ -60,7 +71,7 @@ proc doSocksConnect*(clientSocket: AsyncSocket, targetHost: string, targetPort: 
   return true
 
 when isMainModule:
-  # import httpclient
+  # import httpclient 
 
   # var sock = waitFor asyncnet.dial("127.0.0.1", Port 1080 )
   # echo waitFor sock.doSocksHandshake(username="hans", password="peter", 

@@ -1,9 +1,19 @@
+#
+#
+#                  nimSocks
+#          SOCKS4/4a/5 proxy server
+#            (c) Copyright 2018
+#        David Krause, Tobias Freitag
+#
+#    See the file "LICENSE", included in this
+#    distribution, for details about the copyright.
+## SOCKS4/4a/5 type definitions
+
 import net, asyncnet, asyncdispatch, strutils
 
 const
   DEFAULT_PORT* = 1080
   RESERVED = 0x00.byte
-
   IP_V4_ADDRESS_LEN = 4
   IP_V6_ADDRESS_LEN = 16
   NULL* = 0x00.byte
@@ -52,6 +62,8 @@ type
    # to X'FF' unassigned = 0x09.byte
   SocksVersionRef* = ref object
     socksVersion*: byte
+  
+  # Socks5
   SocksRequest* = ref object
     version*: byte
     cmd*: byte
@@ -121,7 +133,6 @@ proc `$`*(obj: ResponseMessageSelection): string =
   result = ""
   result.add obj.version.char
   result.add obj.selectedMethod.char
-
 
 proc `$`*(obj: SocksResponse): string =
   result = ""
@@ -196,8 +207,6 @@ proc port*(t: tuple[h, l: byte]): Port =
 proc unPort*(p: Port): tuple[h, l: byte] =
   return ((p.int div 256).byte, (p.int mod 256).byte)
 
-
-# proc fill(host: seq[byte], port)
 proc parseHost(host: string): tuple[atyp: byte, data: seq[byte]] =
   var ipaddr: IpAddress
   try:
@@ -207,7 +216,6 @@ proc parseHost(host: string): tuple[atyp: byte, data: seq[byte]] =
       # echo "IPv4"
       result.atyp = IP_V4_ADDRESS.byte
       result.data = ipaddr.address_v4.toBytes()
-      
     of IPv6:
       # echo "IPv6"
       result.atyp = IP_V6_ADDRESS.byte 
@@ -218,12 +226,9 @@ proc parseHost(host: string): tuple[atyp: byte, data: seq[byte]] =
       result.data = host.len.byte & host.toBytes()
       
 proc newSocksRequest*(
-  cmd: SocksCmd, 
-  address: string, 
-  port: Port, 
-  socksVersion: SOCKS_VERSION = SOCKS_V5
+    cmd: SocksCmd, address: string, port: Port, 
+    socksVersion: SOCKS_VERSION = SOCKS_V5
 ): SocksRequest =
-
   if address.len == 0: raise newException(ValueError, "address should not be empty")
   result = SocksRequest()
   result.version  = socksVersion.byte
@@ -233,29 +238,18 @@ proc newSocksRequest*(
   result.dst_port = port.unPort()
   echo repr result
 
-proc newSocksResponse*(
-  socksRequest: SocksRequest, 
-  rep: REP,
-  # address: string, 
-  # port: Port,   
-  ): SocksResponse =
+proc newSocksResponse*(socksRequest: SocksRequest, rep: REP): SocksResponse =
   result = SocksResponse()
   result.version = socksRequest.version
   result.rep = rep.byte
   result.rsv = RESERVED.byte
   result.atyp = socksRequest.atyp
-
   case result.atyp.ATYP
   of IP_V4_ADDRESS, IP_V6_ADDRESS:
     result.bnd_addr = socksRequest.dst_addr
   of DOMAINNAME:
-    result.bnd_addr = socksRequest.dst_addr.len.byte & socksRequest.dst_addr
-  
+    result.bnd_addr = socksRequest.dst_addr.len.byte & socksRequest.dst_addr  
   result.bnd_port = socksRequest.dst_port
-  # (result.atyp, result.bnd_addr) = socksRequest.dst_addr.p.parseHost()
-  # result.bnd_port = port.unPort() 
-  # result.bnd_addr = @[]
-  # result.bnd_port = (0.byte,0.byte)
 
 proc newRequestMessageSelection*(version: SOCKS_VERSION, methods: set[AuthenticationMethod]): RequestMessageSelection =
   result = RequestMessageSelection()
@@ -407,12 +401,11 @@ proc recvSocksVersion*(client:AsyncSocket, socksVersionRef: SocksVersionRef): Fu
 
 proc recvSocks4Request*(client:AsyncSocket, obj: Socks4Request): Future[bool] {.async.} =
   obj.socksVersion = SOCKS_V4.byte
-
+  
   obj.cmd = await client.recvByte
   if not inEnum[SocksCmd](obj.cmd): return false
-
+  
   obj.dst_port = (await client.recvByte, await client.recvByte)
-
   obj.dst_ip = await client.recvBytes(IP_V4_ADDRESS_LEN)
   obj.userid = await client.recvNullTerminated()
   return true  

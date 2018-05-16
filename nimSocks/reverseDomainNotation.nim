@@ -1,3 +1,14 @@
+#
+#
+#                  nimSocks
+#          SOCKS4/4a/5 proxy server
+#            (c) Copyright 2018
+#        David Krause, Tobias Freitag
+#
+#    See the file "LICENSE", included in this
+#    distribution, for details about the copyright.
+#
+
 proc reverseNotation*(hostname: string): string =
   ## returns the reverse domain notation of the given hostname
   ##  https://en.wikipedia.org/wiki/Reverse_domain_name_notation

@@ -1,10 +1,22 @@
+#
+#
+#                  nimSocks
+#          SOCKS4/4a/5 proxy server
+#            (c) Copyright 2018
+#        David Krause, Tobias Freitag
+#
+#    See the file "LICENSE", included in this
+#    distribution, for details about the copyright.
+#
+## SOCKS4/4a/5 proxy server
+
 const
   SIZE = 87_380 ## max size the buffer could be
               ## but since we peek on the sockets,
               ## this buffer gets not filled completely
               ## anyway...
   # SIZE = 6291456
-  STALLING_TIMEOUT = 250 # when full 
+  STALLING_TIMEOUT = 250 # when full: wait then try again
   # ENABLE_MONITORING = true # enables the throughput monitoring
 
 import net, asyncdispatch, asyncnet, nativesockets
@@ -114,7 +126,6 @@ proc addUser(proxy: SocksServer, username: string, password: string) =
 
   proxy.users.add(username, hashedPassword.final())
 
-
 proc pump(proxy: SocksServer, s1, s2: AsyncSocket, direction: Direction, ressource: seq[byte]): Future[void] {.async.} =
 # TODO:
 # from recv docs
@@ -122,7 +133,7 @@ proc pump(proxy: SocksServer, s1, s2: AsyncSocket, direction: Direction, ressour
 # It will read this data in BufferSize chunks.
 # For unbuffered sockets this function makes no effort to read all the data requested.
 # It will return as much data as the operating system gives it.
-  var buffer = newStringOfCap( SIZE )
+  var buffer = newStringOfCap(SIZE)
   while not (s1.isClosed() and s2.isClosed()):
     buffer.setLen 0
     try:
@@ -147,9 +158,7 @@ proc pump(proxy: SocksServer, s1, s2: AsyncSocket, direction: Direction, ressour
       break
     else:
       # write(stdout, buffer) ## DBG
-
       ## Throughtput monitoring
-
       proxy.byteCounter.count($ressource, direction, buffer.len)
 
       try:
@@ -412,6 +421,10 @@ proc dumpThroughput(proxy: SocksServer): Future[void] {.async.} =
     ##
     await sleepAsync(tt)
 
+# proc connect(proxy: SocksServer, host: string, port: int): Future[bool] {.async.} = 
+#   ## instead of listening on a port we connect to a remote host/port
+#   ## then we thread this connection as a "new user" and serve it
+
 proc serve(proxy: SocksServer): Future[void] {.async.} =
   proxy.serverSocket.setSockOpt(OptReuseAddr, true)
   proxy.serverSocket.bindAddr(proxy.listenPort, proxy.listenHost)
@@ -448,7 +461,6 @@ when not defined release:
     assert proxy.authenticate("hans", "peter ") == false
     assert proxy.authenticate(" hans", "peter ") == false
     assert proxy.authenticate("as hans", "dd cpeter ") == false
-
 
 when isMainModule:
   var proxy = newSocksServer()

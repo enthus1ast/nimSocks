@@ -1,3 +1,15 @@
+#
+#
+#                  nimSocks
+#          SOCKS4/4a/5 proxy server
+#            (c) Copyright 2018
+#        David Krause, Tobias Freitag
+#
+#    See the file "LICENSE", included in this
+#    distribution, for details about the copyright.
+#
+## nimSocks small filter language.
+
 import strutils
 
 type
@@ -47,9 +59,9 @@ proc isListed*(bentries: seq[BlacklistEntry], host: string): bool =
 when isMainModule:
   assert parseBlacklistLine("sta foo") == (STA, "foo" )
   assert parseBlacklistLine("sta  foo")  == (STA, "foo" )
-  assert parseBlacklistLine("end porn.com").matched("geiletitten.mira.porn.com") == true
+  assert parseBlacklistLine("end facebook.com").matched("www2.facebook.com") == true
   # assert parseBlacklistLine("# sta  foo")  == (REM, "sta  foo")
 
   var blackList = loadListFancy("blacklistFancy.txt")
   for bentry in blackList:
-    echo $bentry, " | LISTED => ", bentry.matched("geiletitten.mira.porn.com")
+    echo $bentry, " | LISTED => ", bentry.matched("www2.facebook.com")
