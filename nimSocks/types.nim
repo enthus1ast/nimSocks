@@ -271,6 +271,7 @@ proc newSocksUserPasswordRequest*(username: string, password: string): SocksUser
   result.passwd =  password.toBytes()
 
 proc parseDestAddress*(bytes: seq[byte], atyp: ATYP): string =
+  # TODO should use proper type!
   result = ""
   #echo "SCHOULD PARSE: " , repr cast[array[16,char]](bytes)
   for idx, ch in bytes:
@@ -281,8 +282,9 @@ proc parseDestAddress*(bytes: seq[byte], atyp: ATYP): string =
       result.add($ch)
       if idx != IP_V4_ADDRESS_LEN-1: result.add('.')
     of IP_V6_ADDRESS:
-      result.add($ch)
-      if idx != IP_V6_ADDRESS_LEN-1: result.add(':')
+      # TODO
+      result.add((ch).toHex())
+      if idx != IP_V6_ADDRESS_LEN-1 and idx mod 2 == 1: result.add(':')
 
 proc recvByte*(client: AsyncSocket): Future[byte] {.async.} =
   return (await client.recv(1))[0].byte
@@ -322,12 +324,14 @@ proc recvSocksUserPasswordRequest*(client:AsyncSocket, obj: SocksUserPasswordReq
   return true
 
 proc parseEnum[T](bt: byte): T =
+  ## TODO
   for elem in T:
     if bt.T == elem: 
       return bt.T
   raise newException(ValueError, "invalid byte")
 
 proc inEnum[T](bt: byte): bool =
+  ## TODO
   try:
     discard parseEnum[T](bt)
     return true
