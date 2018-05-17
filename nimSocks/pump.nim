@@ -3,7 +3,6 @@ import serverTypes, asyncdispatch, dbg
 proc pump*(proxy: SocksServer, s1, s2: AsyncSocket, direction: Direction, ressource: seq[byte]): Future[void] {.async.} =
   var buffer = newStringOfCap(SIZE)
   while not (s1.isClosed() and s2.isClosed()):
-    dbg "in pump"
     buffer.setLen 0
     try:
       ## Peek, so input buffer remains the same!

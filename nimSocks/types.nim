@@ -272,6 +272,7 @@ proc newSocksUserPasswordRequest*(username: string, password: string): SocksUser
 
 proc parseDestAddress*(bytes: seq[byte], atyp: ATYP): string =
   result = ""
+  #echo "SCHOULD PARSE: " , repr cast[array[16,char]](bytes)
   for idx, ch in bytes:
     case atyp
     of DOMAINNAME:
@@ -294,25 +295,30 @@ proc recvNullTerminated*(client: AsyncSocket): Future[seq[byte]] {.async.} =
   result = @[]
   var ch: byte
   while true:
-    ch = (await client.recv(1))[0].byte
+    let buf = (await client.recv(1))
+    if buf.len == 0: raise newException(ValueError, "recvNullTerminated has read to the end! (this should not happen in SOCKS)")
+    ch = buf[0].byte
     if ch == NULL: break
     result.add ch
 
 proc recvSocksUserPasswordRequest*(client:AsyncSocket, obj: SocksUserPasswordRequest): Future[bool] {.async.} =
-  obj.authVersion = await client.recvByte
-  if obj.authVersion != AuthVersionV1.byte: return false
+  try:
+    obj.authVersion = await client.recvByte
+    if obj.authVersion != AuthVersionV1.byte: return false
 
-  obj.ulen = await client.recvByte
-  if obj.ulen == 0x00: return false
+    obj.ulen = await client.recvByte
+    if obj.ulen == 0x00: return false
 
-  obj.uname = await client.recvBytes(obj.ulen.int)
-  if obj.uname.len == 0: return false
+    obj.uname = await client.recvBytes(obj.ulen.int)
+    if obj.uname.len == 0: return false
 
-  obj.plen = await client.recvByte
-  if obj.plen == 0x00: return false
+    obj.plen = await client.recvByte
+    if obj.plen == 0x00: return false
 
-  obj.passwd = await client.recvBytes(obj.plen.int)
-  if obj.passwd.len == 0: return false
+    obj.passwd = await client.recvBytes(obj.plen.int)
+    if obj.passwd.len == 0: return false
+  except: 
+    return false
   return true
 
 proc parseEnum[T](bt: byte): T =
@@ -329,23 +335,27 @@ proc inEnum[T](bt: byte): bool =
     return false
 
 proc recvSocksRequest*(client:AsyncSocket, obj: SocksRequest): Future[bool] {.async.} =
-  obj.version = await client.recvByte
-  if not inEnum[SOCKS_VERSION](obj.version): return false
+  try:
+    obj.version = await client.recvByte
+    if not inEnum[SOCKS_VERSION](obj.version): return false
 
-  obj.cmd = await client.recvByte
-  if not inEnum[SocksCmd](obj.cmd): return false
+    obj.cmd = await client.recvByte
+    if not inEnum[SocksCmd](obj.cmd): return false
 
-  obj.rsv = await client.recvByte 
-  if obj.rsv != RESERVED.byte: return false
+    obj.rsv = await client.recvByte 
+    if obj.rsv != RESERVED.byte: return false
 
-  obj.atyp = await client.recvByte
-  if not inEnum[ATYP](obj.atyp): return false
+    obj.atyp = await client.recvByte
+    if not inEnum[ATYP](obj.atyp): return false
+  except:
+    echo getCurrentExceptionMsg()
+    return false
 
+  ## TODO these still fail hard
   obj.dst_addr = case obj.atyp.ATYP
     of IP_V4_ADDRESS: await client.recvBytes(IP_V4_ADDRESS_LEN)
     of DOMAINNAME: await client.recvBytes((await client.recvByte).int)
     of IP_V6_ADDRESS: await client.recvBytes(IP_V6_ADDRESS_LEN)
-  
   obj.dst_port = (await client.recvByte, await client.recvByte)
   return true
 
@@ -387,27 +397,36 @@ proc recvResponseMessageSelection*(client:AsyncSocket, obj: ResponseMessageSelec
   return true
 
 proc recvSocksUserPasswordResponse*(client:AsyncSocket, obj: SocksUserPasswordResponse): Future[bool] {.async.} =
-  obj.authVersion = await client.recvByte 
+  try:
+    obj.authVersion = await client.recvByte 
+  except:
+    echo "recvSocksUserPasswordResponse failed"
+    return false
   if obj.authVersion != AuthVersionV1.byte: return false  
-
   obj.status = await client.recvByte
   if not inEnum[UserPasswordStatus](obj.status): return false 
   return true
 
 proc recvSocksVersion*(client:AsyncSocket, socksVersionRef: SocksVersionRef): Future[bool] {.async.} =
-  socksVersionRef.socksVersion = await client.recvByte
+  try:
+    socksVersionRef.socksVersion = await client.recvByte
+  except:
+    echo "recvSocksVersion failed"
+    return false
   if not inEnum[SOCKS_VERSION](socksVersionRef.socksVersion): return false
   return true
 
 proc recvSocks4Request*(client:AsyncSocket, obj: Socks4Request): Future[bool] {.async.} =
   obj.socksVersion = SOCKS_V4.byte
-  
-  obj.cmd = await client.recvByte
-  if not inEnum[SocksCmd](obj.cmd): return false
-  
-  obj.dst_port = (await client.recvByte, await client.recvByte)
-  obj.dst_ip = await client.recvBytes(IP_V4_ADDRESS_LEN)
-  obj.userid = await client.recvNullTerminated()
+  try:
+    obj.cmd = await client.recvByte
+    if not inEnum[SocksCmd](obj.cmd): return false
+    obj.dst_port = (await client.recvByte, await client.recvByte)
+    obj.dst_ip = await client.recvBytes(IP_V4_ADDRESS_LEN)
+    obj.userid = await client.recvNullTerminated()
+  except:
+    echo getCurrentExceptionMsg()
+    return false    
   return true  
 
 proc newSocks4Response*(rep: REP4): Socks4Response =

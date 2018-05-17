@@ -11,8 +11,7 @@
 ## SOCKS4/4a/5 proxy server
 
 ## Known Bugs
-## Nothing works :) use another server
-## - ipv6 on socks4 crashes server
+## - ipv6 on socks5 sometimes crashes server(?)
 
 
 
