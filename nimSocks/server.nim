@@ -141,8 +141,9 @@ proc handleSocks5Connect(
     return (false, nil)
   return (true, remoteSocket)
 
-proc processSocks5(proxy: SocksServer, client: AsyncSocket): Future[void] {.async.} =
+proc processSocks5(proxy: SocksServer, client: AsyncSocket): Future[bool] {.async.} =
   # Handshake/Authentication
+  result = false
   var reqMessageSelection = RequestMessageSelection()
   if (await client.recvRequestMessageSelection(reqMessageSelection)) == false:
     dbg "could not parse RequestMessageSelection: ", reqMessageSelection.version
@@ -225,6 +226,7 @@ proc processSocks5(proxy: SocksServer, client: AsyncSocket): Future[void] {.asyn
 
   asyncCheck proxy.pump(remoteSocket, client, downstream ,socksReq.dst_addr )
   asyncCheck proxy.pump(client, remoteSocket, upstream   ,socksReq.dst_addr )
+  return true
 
 proc handleSocks4Connect(
   proxy: SocksServer,
@@ -253,7 +255,7 @@ proc handleSocks4Connect(
   var connectSuccess = true
   try:
     remoteSocket =  await asyncnet.dial(host, socksReq.dst_port.port())
-    await remoteSocket.send("ARSCH")
+    # await remoteSocket.send("ARSCH")
   except:
     dbg "DIAL FAILED"
     dbg getCurrentExceptionMsg()
@@ -267,7 +269,8 @@ proc handleSocks4Connect(
 
   return (true, remoteSocket)
 
-proc processSocks4(proxy: SocksServer, client: AsyncSocket): Future[void] {.async.} =
+proc processSocks4(proxy: SocksServer, client: AsyncSocket): Future[bool] {.async.} =
+  result = false
   dbg "socks4"
   var socks4Request = Socks4Request()
   if (await client.recvSocks4Request(socks4Request)) == false:
@@ -302,7 +305,8 @@ proc processSocks4(proxy: SocksServer, client: AsyncSocket): Future[void] {.asyn
 
   asyncCheck proxy.pump(remoteSocket, client, downstream , socks4Request.dst_ip )
   asyncCheck proxy.pump(client, remoteSocket, upstream   , socks4Request.dst_ip )
-
+  return true
+  
 proc processClient(proxy: SocksServer, client: AsyncSocket): Future[void] {.async.} =
   # Check for socks version.
   var socksVersionRef = SocksVersionRef()
@@ -311,15 +315,17 @@ proc processClient(proxy: SocksServer, client: AsyncSocket): Future[void] {.asyn
     client.close()
     return
 
+
+  var stayOpen: bool = false
   case socksVersionRef.socksVersion.SOCKS_VERSION
   of SOCKS_V4:
     if proxy.socks4Enabled:
-      await proxy.processSocks4(client)
+      stayOpen = await proxy.processSocks4(client)
   of SOCKS_V5:
     if proxy.socks5Enabled:
-      await proxy.processSocks5(client)
+      stayOpen = await proxy.processSocks5(client)
   
-  if not client.isClosed:
+  if not client.isClosed and not stayOpen:
     client.close()
 
 # proc connect(proxy: SocksServer, host: string, port: int): Future[bool] {.async.} = 
