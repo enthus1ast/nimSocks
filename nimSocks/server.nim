@@ -11,8 +11,7 @@
 ## SOCKS4/4a/5 proxy server
 
 ## Known Bugs
-## - ipv6 on socks5 sometimes crashes server(?)
-
+#
 
 
 import asyncdispatch, asyncnet, nativesockets, tables, dbg
@@ -26,8 +25,9 @@ proc newSocksServer(
     listenPort: Port = Port(DEFAULT_PORT),
     listenHost: string = "",
     allowedAuthMethods: set[AuthenticationMethod] = {USERNAME_PASSWORD},
-    socks4Enabled = false,
-    socks5Enabled = true,
+    allowedSocksVersions: set[SOCKS_VERSION] = {SOCKS_V4, SOCKS_V5},
+    # socks4Enabled = false,
+    # socks5Enabled = true,
 ): SocksServer =
   result = SocksServer()
   result.listenPort = listenPort
@@ -43,9 +43,10 @@ proc newSocksServer(
   result.users = newTable[string, SHA512Digest]()
   result.allowedAuthMethods = allowedAuthMethods
   result.allowedSocksCmds = {CONNECT}
+  result.allowedSocksVersions = allowedSocksVersions
   result.transferedBytes = 0
-  result.socks4Enabled = socks4Enabled
-  result.socks5Enabled = socks5Enabled
+  # result.socks4Enabled = socks4Enabled
+  # result.socks5Enabled = socks5Enabled
   result.stallingTimeout = STALLING_TIMEOUT
   result.byteCounter = newByteCounter()
 
@@ -202,6 +203,7 @@ proc processSocks5(proxy: SocksServer, client: AsyncSocket): Future[bool] {.asyn
       (handleCmdSucceed, remoteSocket) = await proxy.handleSocks5Connect(client, socksReq)
     of SocksCmd.BIND:
       echo "BIND not implemented"
+      # (handleCmdSucceed, remoteSocket) = await proxy.handleSocks5Bind(client, socksReq)
       return
     of SocksCmd.UDP_ASSOCIATE:
       echo "UDP_ASSOCIATE not implemented"
@@ -316,17 +318,21 @@ proc processClient(proxy: SocksServer, client: AsyncSocket): Future[void] {.asyn
 
 
   var stayOpen: bool = false
+  if socksVersionRef.socksVersion.SOCKS_VERSION notin proxy.allowedSocksVersions:
+    dbg "socket version not allowed"
+    client.close()
+    return
+
   case socksVersionRef.socksVersion.SOCKS_VERSION
   of SOCKS_V4:
-    if proxy.socks4Enabled:
-      stayOpen = await proxy.processSocks4(client)
+    stayOpen = await proxy.processSocks4(client)
   of SOCKS_V5:
-    if proxy.socks5Enabled:
-      stayOpen = await proxy.processSocks5(client)
+    stayOpen = await proxy.processSocks5(client)
   
   if not client.isClosed and not stayOpen:
     client.close()
 
+## This is too fancy for now
 # proc connect(proxy: SocksServer, host: string, port: int): Future[bool] {.async.} = 
 #   ## instead of listening on a port we connect to a remote host/port
 #   ## then we thread this connection as a "new user" and serve it
@@ -372,7 +378,7 @@ when isMainModule:
   import throughput
   var proxy = newSocksServer()
   echo "SOCKS Proxy listens on:", proxy.listenPort
-  proxy.socks4Enabled = true # no auth!
+  proxy.allowedSocksVersions = {SOCKS_V4, SOCKS_V5}
   proxy.allowedAuthMethods = {USERNAME_PASSWORD, NO_AUTHENTICATION_REQUIRED}
   proxy.addUser("hans", "peter")
 

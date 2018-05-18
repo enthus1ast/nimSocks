@@ -22,9 +22,10 @@ type SocksServer* = ref object
   users*: TableRef[string, SHA512Digest]
   allowedAuthMethods*: set[AuthenticationMethod]
   allowedSocksCmds*: set[SocksCmd]
+  allowedSocksVersions*: set[SOCKS_VERSION]
   transferedBytes*: int
-  socks4Enabled*: bool
-  socks5Enabled*: bool
+  # socks4Enabled*: bool
+  # socks5Enabled*: bool
   stallingTimeout*: int
   byteCounter*: ByteCounter
   # tcpBindPortRange: range[int]

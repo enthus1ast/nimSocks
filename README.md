@@ -96,9 +96,12 @@ sock.send(FOO) # from here we speak to "mytarget.loc"
 sock.close() # will destroy the whole tunnel
 ```
 
-
 ## getLocalAddr 
 Since the SOCKS proxy server is acting on our behalf, 
 we cannot use `sock.getLocalAddr` to aquire our address.
 The server has to provides these data.
-
+ 
+## random examples
+```
+$ ncat --proxy 127.0.0.1:1080 --proxy-type socks5 --proxy-auth hans:peter  2a02:bbb:aaa:9daa:ff11:a4ff:aaaa:bbbb 9090
+```
