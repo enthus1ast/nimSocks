@@ -287,7 +287,9 @@ proc parseDestAddress*(bytes: seq[byte], atyp: ATYP): string =
       if idx != IP_V6_ADDRESS_LEN-1 and idx mod 2 == 1: result.add(':')
 
 proc recvByte*(client: AsyncSocket): Future[byte] {.async.} =
-  return (await client.recv(1))[0].byte
+  # return (await client.recv(1))[0].byte # crash 18.1
+  var dat = await client.recv(1) # TODO remove workaround someday
+  return dat[0].byte
 
 proc recvBytes*(client: AsyncSocket, count: int): Future[seq[byte]] {.async.} =
   return (await client.recv(count)).toSeq()
