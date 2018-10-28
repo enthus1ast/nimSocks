@@ -42,7 +42,7 @@ proc newSocksServer(
   result.logFileReverse = open("hostsReverse.txt", fmAppend)
   result.users = newTable[string, SHA512Digest]()
   result.allowedAuthMethods = allowedAuthMethods
-  result.allowedSocksCmds = {CONNECT}
+  result.allowedSocksCmds = {SocksCmd.CONNECT}
   result.allowedSocksVersions = allowedSocksVersions
   result.transferedBytes = 0
   # result.socks4Enabled = socks4Enabled
