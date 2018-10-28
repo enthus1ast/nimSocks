@@ -61,7 +61,7 @@ proc doSocksHandshake*(
   else: return false
 
 proc doSocksConnect*(clientSocket: AsyncSocket, targetHost: string, targetPort: Port) : Future[bool] {.async.} =
-  var socksReq = newSocksRequest(CONNECT, targetHost, targetPort)
+  var socksReq = newSocksRequest(SocksCmd.CONNECT, targetHost, targetPort)
   await clientSocket.send($socksReq)
   var socksResp = SocksResponse()
   if not (await clientSocket.recvSocksResponse(socksResp)): return false
