@@ -208,9 +208,6 @@ proc processSocks5(proxy: SocksServer, client: AsyncSocket): Future[bool] {.asyn
     of SocksCmd.UDP_ASSOCIATE:
       echo "UDP_ASSOCIATE not implemented"
       return
-    else:
-      echo "not implemented"
-      return
 
   if handleCmdSucceed == false:
     dbg "Handling command: failed"
@@ -290,9 +287,6 @@ proc processSocks4(proxy: SocksServer, client: AsyncSocket): Future[bool] {.asyn
     (handleCmdSucceed, remoteSocket) = await proxy.handleSocks4Connect(client, socks4Request)
   of Socks4Cmd.BIND:
     echo "BIND not implemented"
-    return
-  else:
-    echo "not implemented"
     return
 
   if handleCmdSucceed == false:
@@ -380,16 +374,21 @@ when isMainModule:
   echo "SOCKS Proxy listens on:", proxy.listenPort
   proxy.allowedSocksVersions = {SOCKS_V4, SOCKS_V5}
   proxy.allowedAuthMethods = {USERNAME_PASSWORD, NO_AUTHENTICATION_REQUIRED}
-  proxy.addUser("hans", "peter")
+  
+  ## Add a valid user / password combination
+  # proxy.addUser("hans", "peter")
 
+  ## Files for black and whitelisting
   # proxy.blacklistHost = loadList("blacklist.txt")
-  proxy.blacklistHostFancy = loadListFancy("blacklistFancy.txt")
-  proxy.whitelistHostFancy = loadListFancy("whitelistFancy.txt")
+  # proxy.blacklistHostFancy = loadListFancy("blacklistFancy.txt")
+  # proxy.whitelistHostFancy = loadListFancy("whitelistFancy.txt")
   # proxy.whitelistHost = @[
   #   "example.org"
   # ]
+
+  ## For a static host replacement:  
   # proxy.staticHosts.add("foo.loc", "example.org")
-  proxy.staticHosts.add("foo.loc", "example.org")
+  
   asyncCheck proxy.serve()
   # asyncCheck proxy.dumpThroughput()
   # asyncCheck proxy.dumpThroughput()
