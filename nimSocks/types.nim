@@ -44,25 +44,25 @@ type
   SocksCmd* {.pure.} = enum
     CONNECT = 0x01.byte
     BIND = 0x02.byte
-    UDP_ASSOCIATE = 0x03.byte 
+    UDP_ASSOCIATE = 0x03.byte
   ATYP* = enum
     IP_V4_ADDRESS = 0x01.byte
     DOMAINNAME = 0x03.byte
     IP_V6_ADDRESS = 0x04.byte
   REP* = enum
-   SUCCEEDED = 0x00.byte 
-   GENERAL_SOCKS_SERVER_FAILURE = 0x01.byte 
-   CONNECTION_NOT_ALLOWED_BY_RULESET = 0x02.byte 
-   NETWORK_UNREACHABLE = 0x03.byte 
-   HOST_UNREACHABLE = 0x04.byte 
-   CONNECTION_REFUSED = 0x05.byte 
-   TTL_EXPIRED = 0x06.byte 
-   COMMAND_NOT_SUPPORTED = 0x07.byte 
-   ADDRESS_TYPE_NOT_SUPPORTED = 0x08.byte 
+   SUCCEEDED = 0x00.byte
+   GENERAL_SOCKS_SERVER_FAILURE = 0x01.byte
+   CONNECTION_NOT_ALLOWED_BY_RULESET = 0x02.byte
+   NETWORK_UNREACHABLE = 0x03.byte
+   HOST_UNREACHABLE = 0x04.byte
+   CONNECTION_REFUSED = 0x05.byte
+   TTL_EXPIRED = 0x06.byte
+   COMMAND_NOT_SUPPORTED = 0x07.byte
+   ADDRESS_TYPE_NOT_SUPPORTED = 0x08.byte
    # to X'FF' unassigned = 0x09.byte
   SocksVersionRef* = ref object
     socksVersion*: byte
-  
+
   # Socks5
   SocksRequest* = ref object
     version*: byte
@@ -91,22 +91,22 @@ type
   ## Socks4 & Socks4a
   REP4* = enum
     REQUEST_GRANTED = 0x5A.byte
-    REQUEST_REJECTED_OR_FAILED = 0x05B.byte  
+    REQUEST_REJECTED_OR_FAILED = 0x05B.byte
   Socks4Cmd* {.pure.} = enum
     CONNECT = 0x01.byte
     BIND = 0x02.byte
   Socks4Request* = ref object
-    socksVersion*: byte # socksVersion*: SOCKS_VERSION 
+    socksVersion*: byte # socksVersion*: SOCKS_VERSION
     cmd*: byte # cmd*: Socks4Cmd
     dst_port*: tuple[h: byte, l: byte]
-    dst_ip*: seq[byte] # 4 byte array! # TODO 
+    dst_ip*: seq[byte] # 4 byte array! # TODO
     userid*: seq[byte] # null terminated but not captured!
     # socksDns*: seq[byte]
   Socks4Response* = ref object
-    socks4ReplyVersion*: byte 
+    socks4ReplyVersion*: byte
     cmd*: byte
     dst_port*: tuple[h: byte, l: byte]
-    dst_ip*: seq[byte] # 4 byte array! # TODO 
+    dst_ip*: seq[byte] # 4 byte array! # TODO
 
 proc toBytes*(str: string): seq[byte] =
   result = @[]
@@ -146,10 +146,10 @@ proc `$`*(obj: SocksResponse): string =
 
 proc `$`*(obj: SocksRequest): string =
   result = ""
-  result.add obj.version.char 
-  result.add obj.cmd.char 
-  result.add obj.rsv.char 
-  result.add obj.atyp.char 
+  result.add obj.version.char
+  result.add obj.cmd.char
+  result.add obj.rsv.char
+  result.add obj.atyp.char
   result.add $obj.dst_addr
   result.add obj.dst_port.h.char
   result.add obj.dst_port.l.char
@@ -167,31 +167,31 @@ proc `$`*(obj: RequestMessageSelection): string =
 
 proc `$`*(obj: SocksUserPasswordRequest): string =
   result = ""
-  result.add obj.authVersion.char 
-  result.add obj.ulen.char 
+  result.add obj.authVersion.char
+  result.add obj.ulen.char
   result.add $obj.uname
-  result.add obj.plen.char 
+  result.add obj.plen.char
   result.add $obj.passwd
 
-proc `$`*(obj: Socks4Request): string = 
-  result = ""  
+proc `$`*(obj: Socks4Request): string =
+  result = ""
   result.add obj.socksVersion.char
   result.add obj.cmd.char
   result.add obj.dst_port.h.char
-  result.add obj.dst_port.l.char  
+  result.add obj.dst_port.l.char
   result.add $obj.dst_ip
   result.add $obj.userid
   result.add NULL.char
 
-proc `$`*(obj: Socks4Response): string = 
-  result = ""  
+proc `$`*(obj: Socks4Response): string =
+  result = ""
   result.add obj.socks4ReplyVersion.char
   result.add obj.cmd.char
   result.add obj.dst_port.h.char
-  result.add obj.dst_port.l.char  
+  result.add obj.dst_port.l.char
   result.add $obj.dst_ip
 
-proc toSeq*(str: string): seq[byte] = 
+proc toSeq*(str: string): seq[byte] =
   result = @[]
   for ch in str:
     result.add ch.byte
@@ -218,15 +218,15 @@ proc parseHost(host: string): tuple[atyp: byte, data: seq[byte]] =
       result.data = ipaddr.address_v4.toBytes()
     of IPv6:
       # echo "IPv6"
-      result.atyp = IP_V6_ADDRESS.byte 
+      result.atyp = IP_V6_ADDRESS.byte
       result.data = ipaddr.address_v6.toBytes()
   except:
       # echo "DOMAINNAME"
       result.atyp = DOMAINNAME.byte
       result.data = host.len.byte & host.toBytes()
-      
+
 proc newSocksRequest*(
-    cmd: SocksCmd, address: string, port: Port, 
+    cmd: SocksCmd, address: string, port: Port,
     socksVersion: SOCKS_VERSION = SOCKS_V5
 ): SocksRequest =
   if address.len == 0: raise newException(ValueError, "address should not be empty")
@@ -244,11 +244,13 @@ proc newSocksResponse*(socksRequest: SocksRequest, rep: REP): SocksResponse =
   result.rep = rep.byte
   result.rsv = RESERVED.byte
   result.atyp = socksRequest.atyp
+  # echo "Atype: ", result.atyp
+  # echo "Atype: ", ATYP(result.atyp)
   case result.atyp.ATYP
   of IP_V4_ADDRESS, IP_V6_ADDRESS:
     result.bnd_addr = socksRequest.dst_addr
   of DOMAINNAME:
-    result.bnd_addr = socksRequest.dst_addr.len.byte & socksRequest.dst_addr  
+    result.bnd_addr = socksRequest.dst_addr.len.byte & socksRequest.dst_addr
   result.bnd_port = socksRequest.dst_port
 
 proc newRequestMessageSelection*(version: SOCKS_VERSION, methods: set[AuthenticationMethod]): RequestMessageSelection =
@@ -278,7 +280,7 @@ proc parseDestAddress*(bytes: seq[byte], atyp: ATYP): string =
     case atyp
     of DOMAINNAME:
       result.add(ch.chr())
-    of IP_V4_ADDRESS: 
+    of IP_V4_ADDRESS:
       result.add($ch)
       if idx != IP_V4_ADDRESS_LEN-1: result.add('.')
     of IP_V6_ADDRESS:
@@ -321,16 +323,20 @@ proc recvSocksUserPasswordRequest*(client:AsyncSocket, obj: SocksUserPasswordReq
 
     obj.passwd = await client.recvBytes(obj.plen.int)
     if obj.passwd.len == 0: return false
-  except: 
+  except:
     return false
   return true
 
 proc parseEnum[T](bt: byte): T =
   ## TODO
-  for elem in T:
-    if bt.T == elem: 
-      return bt.T
-  raise newException(ValueError, "invalid byte")
+  # for elem in T:
+  #   if bt.T == elem:
+  #     return bt.T
+  try:
+    return T(bt)
+  except:
+    echo "INVALID BYTE"
+    raise newException(ValueError, "invalid byte")
 
 proc inEnum[T](bt: byte): bool =
   ## TODO
@@ -348,7 +354,7 @@ proc recvSocksRequest*(client:AsyncSocket, obj: SocksRequest): Future[bool] {.as
     obj.cmd = await client.recvByte
     if not inEnum[SocksCmd](obj.cmd): return false
 
-    obj.rsv = await client.recvByte 
+    obj.rsv = await client.recvByte
     if obj.rsv != RESERVED.byte: return false
 
     obj.atyp = await client.recvByte
@@ -372,7 +378,7 @@ proc recvSocksResponse*(client:AsyncSocket, obj: SocksResponse): Future[bool] {.
   obj.rep = await client.recvByte
   if not inEnum[REP](obj.rep): return false
 
-  obj.rsv = await client.recvByte 
+  obj.rsv = await client.recvByte
   if obj.rsv != RESERVED.byte: return false
 
   obj.atyp = await client.recvByte
@@ -382,9 +388,9 @@ proc recvSocksResponse*(client:AsyncSocket, obj: SocksResponse): Future[bool] {.
     of IP_V4_ADDRESS: await client.recvBytes(IP_V4_ADDRESS_LEN)
     of DOMAINNAME: await client.recvBytes((await client.recvByte).int)
     of IP_V6_ADDRESS: await client.recvBytes(IP_V6_ADDRESS_LEN)
-  
+
   obj.bnd_port = (await client.recvByte, await client.recvByte)
-  return true    
+  return true
 
 proc recvRequestMessageSelection*(client:AsyncSocket, obj: RequestMessageSelection): Future[bool] {.async.} =
   obj.version = SOCKS_V5.byte
@@ -404,13 +410,13 @@ proc recvResponseMessageSelection*(client:AsyncSocket, obj: ResponseMessageSelec
 
 proc recvSocksUserPasswordResponse*(client:AsyncSocket, obj: SocksUserPasswordResponse): Future[bool] {.async.} =
   try:
-    obj.authVersion = await client.recvByte 
+    obj.authVersion = await client.recvByte
   except:
     echo "recvSocksUserPasswordResponse failed"
     return false
-  if obj.authVersion != AuthVersionV1.byte: return false  
+  if obj.authVersion != AuthVersionV1.byte: return false
   obj.status = await client.recvByte
-  if not inEnum[UserPasswordStatus](obj.status): return false 
+  if not inEnum[UserPasswordStatus](obj.status): return false
   return true
 
 proc recvSocksVersion*(client:AsyncSocket, socksVersionRef: SocksVersionRef): Future[bool] {.async.} =
@@ -432,19 +438,19 @@ proc recvSocks4Request*(client:AsyncSocket, obj: Socks4Request): Future[bool] {.
     obj.userid = await client.recvNullTerminated()
   except:
     echo getCurrentExceptionMsg()
-    return false    
-  return true  
+    return false
+  return true
 
 proc newSocks4Response*(rep: REP4): Socks4Response =
   result = Socks4Response()
-  result.socks4ReplyVersion = NULL 
+  result.socks4ReplyVersion = NULL
   result.cmd = rep.byte
   result.dst_ip = @[0.byte,0.byte,0.byte,0.byte] # ignored
   result.dst_port = (0.byte,0.byte) # ignored
 
 proc isSocks4aHack*(dst_ip: seq[byte]): bool =
-  return 
-    dst_ip[0] == NULL and 
+  return
+    dst_ip[0] == NULL and
     dst_ip[1] == NULL and
     dst_ip[2] == NULL and
     dst_ip[3] != NULL

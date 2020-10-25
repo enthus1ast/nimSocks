@@ -56,7 +56,7 @@ proc isBlacklisted(proxy: SocksServer, host: string): bool =
 proc isWhitelisted(proxy: SocksServer, host: string): bool =
   return host in proxy.whitelistHost or proxy.whitelistHostFancy.isListed(host)
 
-proc isListed(proxy: SocksServer, host: string): bool = 
+proc isListed(proxy: SocksServer, host: string): bool =
   if proxy.whitelistHost.len == 0 and proxy.whitelistHostFancy.len == 0:
     if proxy.isBlacklisted(host):
       dbg "Blacklisted host:", host
@@ -72,7 +72,9 @@ proc authenticate(proxy: SocksServer, username, password: string): bool =
   dbg "password: ", password
   if username.len == 0: return
   if password.len == 0: return
-  if not proxy.users.hasKey(username): return false
+  if not proxy.users.hasKey(username):
+    dbg "user unknown: ", username
+    return false
 
   var
     hashedPassword = initSHA[SHA512]()
@@ -119,12 +121,13 @@ proc handleSocks5Connect(
     remoteSocket: AsyncSocket
 
   dbg "host: ", host
+  dbg "hosR: ", repr(host)
   dbg "--->: ", host.reverseNotation()
   host = proxy.getStaticRewrite(host)
   if proxy.isListed(host):
       var socksResp = newSocksResponse(socksReq, CONNECTION_NOT_ALLOWED_BY_RULESET)
-      await client.send($socksResp)    
-      return (false, nil)  
+      await client.send($socksResp)
+      return (false, nil)
   proxy.logHost host
   var connectSuccess = true
   try:
@@ -162,13 +165,16 @@ proc processSocks5(proxy: SocksServer, client: AsyncSocket): Future[bool] {.asyn
     dbg "Got user password Authentication"
     respMessageSelection.selectedMethod = USERNAME_PASSWORD.byte
     await client.send($respMessageSelection)
-    
+
     var socksUserPasswordReq = SocksUserPasswordRequest()
     if (await client.recvSocksUserPasswordRequest(socksUserPasswordReq)) == false:
+      echo "return from recvSocksUserPasswordRequest"
       return
 
     var socksUserPasswordResp = SocksUserPasswordResponse()
     socksUserPasswordResp.authVersion = AuthVersionV1.byte
+    # echo "NAME:", repr($socksUserPasswordReq.uname)
+    # echo "PASS:", repr($socksUserPasswordReq.passwd)
     if proxy.authenticate($socksUserPasswordReq.uname, $socksUserPasswordReq.passwd):
       socksUserPasswordResp.status = UserPasswordStatus.SUCCEEDED.byte
       dbg "Sending good: ", repr($socksUserPasswordResp)
@@ -195,11 +201,12 @@ proc processSocks5(proxy: SocksServer, client: AsyncSocket): Future[bool] {.asyn
   var
     remoteSocket: AsyncSocket = nil
     handleCmdSucceed: bool = false
-  if socksReq.cmd.SocksCmd notin proxy.allowedSocksCmds: 
+  if socksReq.cmd.SocksCmd notin proxy.allowedSocksCmds:
     dbg "proxy command not allowed"
     return
   case socksReq.cmd.SocksCmd:
     of SocksCmd.CONNECT:
+      dbg "socks5 connect"
       (handleCmdSucceed, remoteSocket) = await proxy.handleSocks5Connect(client, socksReq)
     of SocksCmd.BIND:
       echo "BIND not implemented"
@@ -217,13 +224,42 @@ proc processSocks5(proxy: SocksServer, client: AsyncSocket): Future[bool] {.asyn
   var
     socksResp = newSocksResponse(socksReq, SUCCEEDED)
     (hst, prt) = remoteSocket.getFd.getLocalAddr(Domain.AF_INET)
-  socksResp.bnd_addr = @[hst.len.byte]
-  socksResp.bnd_addr &= hst.toBytes()
-  socksResp.bnd_port = prt.unPort
+
+  ## BUG
+  # the bind address is wrong!!
+  #
+  # https://tools.ietf.org/html/rfc1928
+  # 5.  Addressing
+
+  #  In an address field (DST.ADDR, BND.ADDR), the ATYP field specifies
+  #  the type of address contained within the field:
+
+  #         o  X'01'
+
+  #  the address is a version-4 IP address, with a length of 4 octets
+
+  #         o  X'03'
+
+  #  the address field contains a fully-qualified domain name.  The first
+  #  octet of the address field contains the number of octets of name that
+  #  follow, there is no terminating NUL octet.
+
+  #         o  X'04'
+  # socksResp.bnd_addr = @[hst.len.byte]
+  # socksResp.bnd_addr &= hst.toBytes()
+  # socksResp.bnd_port = prt.unPort
+  # echo "=1==============="
+  # echo socksResp
+  # echo "=2==============="
+  # echo repr socksResp
+  # echo "=3==============="
+  # echo $socksResp
+  # echo "================"
+
   await client.send($socksResp)
 
-  asyncCheck proxy.pump(remoteSocket, client, downstream ,socksReq.dst_addr )
-  asyncCheck proxy.pump(client, remoteSocket, upstream   ,socksReq.dst_addr )
+  asyncCheck proxy.pump(remoteSocket, client, downstream , socksReq.dst_addr, socksReq.atyp.ATYP)
+  asyncCheck proxy.pump(client, remoteSocket, upstream   , socksReq.dst_addr, socksReq.atyp.ATYP)
   return true
 
 proc handleSocks4Connect(
@@ -246,7 +282,7 @@ proc handleSocks4Connect(
   if proxy.isListed(host):
     dbg "REQUEST_REJECTED_OR_FAILED"
     var socksResp = newSocks4Response(REQUEST_REJECTED_OR_FAILED)
-    await client.send($socksResp)    
+    await client.send($socksResp)
     return (false, nil)
   proxy.logHost (host)
 
@@ -270,6 +306,11 @@ proc handleSocks4Connect(
 proc processSocks4(proxy: SocksServer, client: AsyncSocket): Future[bool] {.async.} =
   result = false
   dbg "socks4"
+
+  if not proxy.allowedAuthMethods.contains(NO_AUTHENTICATION_REQUIRED):
+    dbg "socks4 socks4a does not support authentication, ensure that allowedAuthMethods contains NO_AUTHENTICATION_REQUIRED"
+    return
+
   var socks4Request = Socks4Request()
   if (await client.recvSocks4Request(socks4Request)) == false:
     dbg "could not parse Socks4Request: " #, socks4Request
@@ -278,9 +319,9 @@ proc processSocks4(proxy: SocksServer, client: AsyncSocket): Future[bool] {.asyn
   var
     remoteSocket: AsyncSocket = nil
     handleCmdSucceed: bool = false
-  if socks4Request.cmd.SocksCmd notin proxy.allowedSocksCmds: 
+  if socks4Request.cmd.SocksCmd notin proxy.allowedSocksCmds:
     dbg "proxy command not allowed"
-    return    
+    return
   case socks4Request.cmd.Socks4Cmd
   of Socks4Cmd.CONNECT:
     # echo "CONNECT not implemented"
@@ -298,10 +339,10 @@ proc processSocks4(proxy: SocksServer, client: AsyncSocket): Future[bool] {.asyn
     socksResp = newSocks4Response(REQUEST_GRANTED)
   await client.send($socksResp)
 
-  asyncCheck proxy.pump(remoteSocket, client, downstream , socks4Request.dst_ip )
-  asyncCheck proxy.pump(client, remoteSocket, upstream   , socks4Request.dst_ip )
+  asyncCheck proxy.pump(remoteSocket, client, downstream , socks4Request.dst_ip, ATYP.IP_V4_ADDRESS)
+  asyncCheck proxy.pump(client, remoteSocket, upstream   , socks4Request.dst_ip, ATYP.IP_V4_ADDRESS)
   return true
-  
+
 proc processClient(proxy: SocksServer, client: AsyncSocket): Future[void] {.async.} =
   # Check for socks version.
   var socksVersionRef = SocksVersionRef()
@@ -322,12 +363,12 @@ proc processClient(proxy: SocksServer, client: AsyncSocket): Future[void] {.asyn
     stayOpen = await proxy.processSocks4(client)
   of SOCKS_V5:
     stayOpen = await proxy.processSocks5(client)
-  
+
   if not client.isClosed and not stayOpen:
     client.close()
 
 ## This is too fancy for now
-# proc connect(proxy: SocksServer, host: string, port: int): Future[bool] {.async.} = 
+# proc connect(proxy: SocksServer, host: string, port: int): Future[bool] {.async.} =
 #   ## instead of listening on a port we connect to a remote host/port
 #   ## then we thread this connection as a "new user" and serve it
 
@@ -373,10 +414,12 @@ when isMainModule:
   var proxy = newSocksServer()
   echo "SOCKS Proxy listens on:", proxy.listenPort
   proxy.allowedSocksVersions = {SOCKS_V4, SOCKS_V5}
-  proxy.allowedAuthMethods = {USERNAME_PASSWORD, NO_AUTHENTICATION_REQUIRED}
-  
+  # proxy.allowedAuthMethods = {USERNAME_PASSWORD, NO_AUTHENTICATION_REQUIRED}
+  proxy.allowedAuthMethods = {USERNAME_PASSWORD}
+  # proxy.allowedAuthMethods = {}
+
   ## Add a valid user / password combination
-  # proxy.addUser("hans", "peter")
+  proxy.addUser("hans", "peter")
 
   ## Files for black and whitelisting
   # proxy.blacklistHost = loadList("blacklist.txt")
@@ -386,10 +429,10 @@ when isMainModule:
   #   "example.org"
   # ]
 
-  ## For a static host replacement:  
+  ## For a static host replacement:
   # proxy.staticHosts.add("foo.loc", "example.org")
-  
+
   asyncCheck proxy.serve()
-  # asyncCheck proxy.dumpThroughput()
+  asyncCheck proxy.dumpThroughput()
   # asyncCheck proxy.dumpThroughput()
   runForever()

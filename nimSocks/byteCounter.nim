@@ -8,18 +8,24 @@
 #    See the file "LICENSE", included in this
 #    distribution, for details about the copyright.
 
-import tables, strutils
+import tables, strutils, hashes
+from types import ATYP
 
-type 
+type
   Direction* = enum
     upstream, downstream
-  Ressource* = string
+  Ressource* = object
+    kind*: ATYP
+    value*: string
   RessourceInfo* = tuple[up, down: int]
   ByteCounter* = ref object
     globalUpBytes*: int   # to the remote server
     globalDownBytes*: int # from the remote server TO the client
     ressourceTable: CountTable[(Ressource, Direction)]
     ressourceTableThrougput: CountTable[(Ressource, Direction)]
+
+proc hash(ressource: Ressource): Hash =
+  hash(ressource.value)
 
 proc newByteCounter*(): ByteCounter =
   result = ByteCounter()
@@ -28,7 +34,7 @@ proc newByteCounter*(): ByteCounter =
   result.ressourceTable = initCountTable[(Ressource, Direction)]()
   result.ressourceTableThrougput = initCountTable[(Ressource, Direction)]()
 
-proc count*(byteCounter: ByteCounter, ressource: Ressource, direction: Direction, cnt: int = 1) = 
+proc count*(byteCounter: ByteCounter, ressource: Ressource, direction: Direction, cnt: int = 1) =
   case direction
   of upstream:
     byteCounter.globalUpBytes.inc cnt
@@ -50,9 +56,9 @@ proc `$`*(byteCounter: ByteCounter): string =
   # result.add "globalUpBytes: ", byteCounter.globalUpBytes , "\p"
   result.add "^".repeat(30) & "\p"
 
-proc ressourceInfo*(byteCounter: ByteCounter, ressource: string): RessourceInfo =
+proc ressourceInfo*(byteCounter: ByteCounter, ressource: Ressource): RessourceInfo =
   result.up = byteCounter.ressourceTable[(ressource, upstream)]
-  result.down =  byteCounter.ressourceTable[(ressource, downstream)]  
+  result.down =  byteCounter.ressourceTable[(ressource, downstream)]
 
 proc listRessources*(byteCounter: ByteCounter) =
   for each in byteCounter.ressourceTable.pairs():
@@ -61,7 +67,7 @@ proc listRessources*(byteCounter: ByteCounter) =
 proc dumpThroughput*(byteCounter: ByteCounter, perSeconds = 10) =
   var str: string = ""
 
-  str.add "Througput ( " & $perSeconds & " seconds ):\p"
+  str.add "throughput ( " & $perSeconds & " seconds ):\p"
   for k, v in byteCounter.ressourceTableThrougput.pairs():
     # case k[1]
     # of upstream:
@@ -74,11 +80,11 @@ proc dumpThroughput*(byteCounter: ByteCounter, perSeconds = 10) =
 
 when isMainModule:
   var bc = newByteCounter()
-  bc.count( "klaus", upstream )
-  bc.count( "klaus", upstream )
-  bc.count( "klaus", upstream )
-  bc.count( "klaus", upstream )
-  bc.count( "klaus", downstream )
+  bc.count( Ressource(kind: ATYP.DOMAINNAME, value: "klaus"), upstream )
+  bc.count( Ressource(kind: ATYP.DOMAINNAME, value: "klaus"), upstream )
+  bc.count( Ressource(kind: ATYP.DOMAINNAME, value: "klaus"), upstream )
+  bc.count( Ressource(kind: ATYP.DOMAINNAME, value: "klaus"), upstream )
+  bc.count( Ressource(kind: ATYP.DOMAINNAME, value: "klaus"), downstream )
   # echo bc.ressourceTable[("klaus", upstream)]
   # echo bc.ressourceTable[("klaus", downstream)]
   echo "klaus: ", bc.ressourceInfo("klaus")

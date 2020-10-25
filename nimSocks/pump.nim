@@ -1,6 +1,7 @@
 import serverTypes, asyncdispatch, dbg
+from byteCounter import Ressource
 
-proc pump*(proxy: SocksServer, s1, s2: AsyncSocket, direction: Direction, ressource: seq[byte]): Future[void] {.async.} =
+proc pump*(proxy: SocksServer, s1, s2: AsyncSocket, direction: Direction, ressource: seq[byte], atyp: ATYP): Future[void] {.async.} =
   var buffer = newStringOfCap(SIZE)
   while not (s1.isClosed() and s2.isClosed()):
     buffer.setLen 0
@@ -9,7 +10,7 @@ proc pump*(proxy: SocksServer, s1, s2: AsyncSocket, direction: Direction, ressou
       buffer.add await s1.recv(SIZE, flags={SocketFlag.Peek, SocketFlag.SafeDisconn})
     except:
       echo 1, getCurrentExceptionMsg()
-      buffer.setLen 0 
+      buffer.setLen 0
 
     if buffer.len > 0:
       try:
@@ -31,7 +32,7 @@ proc pump*(proxy: SocksServer, s1, s2: AsyncSocket, direction: Direction, ressou
     else:
       # write(stdout, buffer) ## DBG
       ## Throughtput monitoring
-      proxy.byteCounter.count($ressource, direction, buffer.len)
+      proxy.byteCounter.count(Ressource(kind: atyp, value: $ressource), direction, buffer.len)
 
       try:
         proxy.transferedBytes.inc(buffer.len)
