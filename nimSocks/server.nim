@@ -59,7 +59,7 @@ proc isWhitelisted(proxy: SocksServer, host: string): bool =
 proc isListed(proxy: SocksServer, host: string): bool =
   if proxy.whitelistHost.len == 0 and proxy.whitelistHostFancy.len == 0:
     if proxy.isBlacklisted(host):
-      dbg "Blacklisted host:", host
+      echo "Blacklisted host:", host
       return true
   else:
     if not proxy.isWhitelisted(host):
@@ -416,13 +416,14 @@ when isMainModule:
   proxy.allowedSocksVersions = {SOCKS_V4, SOCKS_V5}
   # proxy.allowedAuthMethods = {USERNAME_PASSWORD, NO_AUTHENTICATION_REQUIRED}
   proxy.allowedAuthMethods = {USERNAME_PASSWORD}
+
   # proxy.allowedAuthMethods = {}
 
   ## Add a valid user / password combination
   proxy.addUser("hans", "peter")
 
   ## Files for black and whitelisting
-  # proxy.blacklistHost = loadList("blacklist.txt")
+  proxy.blacklistHost = loadList("blacklist.txt")
   # proxy.blacklistHostFancy = loadListFancy("blacklistFancy.txt")
   # proxy.whitelistHostFancy = loadListFancy("whitelistFancy.txt")
   # proxy.whitelistHost = @[
@@ -430,7 +431,7 @@ when isMainModule:
   # ]
 
   ## For a static host replacement:
-  # proxy.staticHosts.add("foo.loc", "example.org")
+  proxy.staticHosts.add("peter.peter", "ch4t.code0.xyz")
 
   asyncCheck proxy.serve()
   asyncCheck proxy.dumpThroughput()

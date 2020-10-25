@@ -9,25 +9,25 @@ proc pump*(proxy: SocksServer, s1, s2: AsyncSocket, direction: Direction, ressou
       ## Peek, so input buffer remains the same!
       buffer.add await s1.recv(SIZE, flags={SocketFlag.Peek, SocketFlag.SafeDisconn})
     except:
-      echo 1, getCurrentExceptionMsg()
+      dbg 1, getCurrentExceptionMsg()
       buffer.setLen 0
 
     if buffer.len > 0:
       try:
         discard await s1.recv(buffer.len) # TODO (better way?) we empty the buffer by reading it
       except:
-        echo 2, getCurrentExceptionMsg()
+        dbg 2, getCurrentExceptionMsg()
         buffer.setLen 0
     else:
       try:
         buffer = await s1.recv(1) # we wait for new data...
       except:
-        echo 3, getCurrentExceptionMsg()
+        dbg 3, getCurrentExceptionMsg()
         buffer.setLen 0
 
     if buffer.len == 0:
       # if one side closes we close both sides!
-      echo "break 1"
+      dbg "break 1"
       break
     else:
       # write(stdout, buffer) ## DBG
