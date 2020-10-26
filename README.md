@@ -141,7 +141,7 @@ assert true == waitFor sock.doSocksConnect("secondSocks.loc", Port 1080)
 assert true == waitFor sock.doSocksHandshake(methods={NO_AUTHENTICATION_REQUIRED})
 assert true == waitFor sock.doSocksConnect("mytarget.loc", Port 80) 
 
-sock.send(FOO) # from here we speak to "mytarget.loc"
+sock.send("FOO") # from here we speak to "mytarget.loc"
 sock.close() # will destroy the whole tunnel
 ```
  
