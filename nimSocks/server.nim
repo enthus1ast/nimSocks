@@ -36,8 +36,8 @@ proc newSocksServer(
   result.whitelistHostFancy = @[]
   result.serverSocket = newAsyncSocket()
   result.staticHosts = initTable[string, string]()
-  result.logFile = open("hosts.txt", fmAppend)
-  result.logFileReverse = open("hostsReverse.txt", fmAppend)
+  # result.logFile = open("hosts.txt", fmAppend)
+  # result.logFileReverse = open("hostsReverse.txt", fmAppend)
   result.users = newTable[string, SHA512Digest]()
   result.allowedAuthMethods = allowedAuthMethods
   result.allowedSocksCmds = {SocksCmd.CONNECT}
@@ -94,13 +94,15 @@ proc addUser(proxy: SocksServer, username: string, password: string) =
   hashedPassword.update(username)
   hashedPassword.update(password)
 
-  proxy.users.add(username, hashedPassword.final())
+  proxy.users[username] = hashedPassword.final()
 
 proc logHost(proxy: SocksServer, host: string) =
-  proxy.logFile.writeLine(host)
-  proxy.logFileReverse.writeLine(host.reverseNotation() )
-  proxy.logFile.flushFile()
-  proxy.logFileReverse.flushFile()
+  if not proxy.logFile.isNil:
+    proxy.logFile.writeLine(host)
+    proxy.logFile.flushFile()
+  if not proxy.logFileReverse.isNil:
+    proxy.logFileReverse.writeLine(host.reverseNotation() )
+    proxy.logFileReverse.flushFile()
 
 proc getStaticRewrite(proxy: SocksServer, host: string): string =
   if proxy.staticHosts.contains host:
@@ -124,7 +126,10 @@ proc handleSocks5Connect(
       var socksResp = newSocksResponse(socksReq, CONNECTION_NOT_ALLOWED_BY_RULESET)
       await client.send($socksResp)
       return (false, nil)
-  proxy.logHost host
+
+  if proxy.shouldLogHost:
+    proxy.logHost host
+
   var connectSuccess = true
   try:
     remoteSocket =  await asyncnet.dial(host, socksReq.dst_port.port())
@@ -139,6 +144,7 @@ proc handleSocks5Connect(
     echo "HOST_UNREACHABLE:", host
     return (false, nil)
   return (true, remoteSocket)
+
 
 proc processSocks5(proxy: SocksServer, client: AsyncSocket): Future[bool] {.async.} =
   # Handshake/Authentication
@@ -164,13 +170,11 @@ proc processSocks5(proxy: SocksServer, client: AsyncSocket): Future[bool] {.asyn
 
     var socksUserPasswordReq = SocksUserPasswordRequest()
     if (await client.recvSocksUserPasswordRequest(socksUserPasswordReq)) == false:
-      echo "return from recvSocksUserPasswordRequest"
+      dbg "return from recvSocksUserPasswordRequest"
       return
 
     var socksUserPasswordResp = SocksUserPasswordResponse()
     socksUserPasswordResp.authVersion = AuthVersionV1.byte
-    # echo "NAME:", repr($socksUserPasswordReq.uname)
-    # echo "PASS:", repr($socksUserPasswordReq.passwd)
     if proxy.authenticate($socksUserPasswordReq.uname, $socksUserPasswordReq.passwd):
       socksUserPasswordResp.status = UserPasswordStatus.SUCCEEDED.byte
       dbg "Sending good: ", repr($socksUserPasswordResp)
@@ -188,7 +192,6 @@ proc processSocks5(proxy: SocksServer, client: AsyncSocket): Future[bool] {.asyn
     dbg "Not supported authentication method"
     return
 
-  # client sends what we should do
   var socksReq = SocksRequest()
   if (await client.recvSocksRequest(socksReq)) == false:
     dbg "Could not parse socksReq"
@@ -251,12 +254,13 @@ proc processSocks5(proxy: SocksServer, client: AsyncSocket): Future[bool] {.asyn
   # echo "=3==============="
   # echo $socksResp
   # echo "================"
-
   await client.send($socksResp)
 
+  # From here on we start relaying data
   asyncCheck proxy.pump(remoteSocket, client, downstream , socksReq.dst_addr, socksReq.atyp.ATYP)
   asyncCheck proxy.pump(client, remoteSocket, upstream   , socksReq.dst_addr, socksReq.atyp.ATYP)
   return true
+
 
 proc handleSocks4Connect(
   proxy: SocksServer,
@@ -280,12 +284,13 @@ proc handleSocks4Connect(
     var socksResp = newSocks4Response(REQUEST_REJECTED_OR_FAILED)
     await client.send($socksResp)
     return (false, nil)
-  proxy.logHost (host)
+
+  if proxy.shouldLogHost:
+    proxy.logHost(host)
 
   var connectSuccess = true
   try:
     remoteSocket =  await asyncnet.dial(host, socksReq.dst_port.port())
-    # await remoteSocket.send("ARSCH")
   except:
     dbg "DIAL FAILED"
     dbg getCurrentExceptionMsg()
@@ -320,7 +325,6 @@ proc processSocks4(proxy: SocksServer, client: AsyncSocket): Future[bool] {.asyn
     return
   case socks4Request.cmd.Socks4Cmd
   of Socks4Cmd.CONNECT:
-    # echo "CONNECT not implemented"
     (handleCmdSucceed, remoteSocket) = await proxy.handleSocks4Connect(client, socks4Request)
   of Socks4Cmd.BIND:
     echo "BIND not implemented"
@@ -331,13 +335,14 @@ proc processSocks4(proxy: SocksServer, client: AsyncSocket): Future[bool] {.asyn
     return
   dbg "Handling command: succeed"
 
-  var
-    socksResp = newSocks4Response(REQUEST_GRANTED)
+  var socksResp = newSocks4Response(REQUEST_GRANTED)
   await client.send($socksResp)
 
+  # From here on we start relaying data
   asyncCheck proxy.pump(remoteSocket, client, downstream , socks4Request.dst_ip, ATYP.IP_V4_ADDRESS)
   asyncCheck proxy.pump(client, remoteSocket, upstream   , socks4Request.dst_ip, ATYP.IP_V4_ADDRESS)
   return true
+
 
 proc processClient(proxy: SocksServer, client: AsyncSocket): Future[void] {.async.} =
   # Check for socks version.
@@ -346,7 +351,6 @@ proc processClient(proxy: SocksServer, client: AsyncSocket): Future[void] {.asyn
     dbg "unknown socks version: ", socksVersionRef.socksVersion
     client.close()
     return
-
 
   var stayOpen: bool = false
   if socksVersionRef.socksVersion.SOCKS_VERSION notin proxy.allowedSocksVersions:
@@ -363,19 +367,12 @@ proc processClient(proxy: SocksServer, client: AsyncSocket): Future[void] {.asyn
   if not client.isClosed and not stayOpen:
     client.close()
 
-## This is too fancy for now
-# proc connect(proxy: SocksServer, host: string, port: int): Future[bool] {.async.} =
-#   ## instead of listening on a port we connect to a remote host/port
-#   ## then we thread this connection as a "new user" and serve it
+
 
 proc serve(proxy: SocksServer): Future[void] {.async.} =
   proxy.serverSocket.setSockOpt(OptReuseAddr, true)
   proxy.serverSocket.bindAddr(proxy.listenPort, proxy.listenHost)
   proxy.serverSocket.listen()
-
-  # TODO maybe do this:
-  # if (not (NO_AUTHENTICATION_REQUIRED in proxy.allowedAuthMethods)) and (not proxy.socks5Enabled):
-  #   raise newException(ValueError, "SOCKS4 does not support authentication, enable SOCKS5 ")
   var
     address: string
     client: AsyncSocket
@@ -388,7 +385,7 @@ proc serve(proxy: SocksServer): Future[void] {.async.} =
       stalling = false
     except:
       dbg "could not accept new connection:"
-      echo getCurrentExceptionMsg()
+      dbg getCurrentExceptionMsg()
       stalling = true
       continue
 
@@ -406,19 +403,23 @@ when not defined release:
     assert proxy.authenticate("as hans", "dd cpeter ") == false
 
 when isMainModule:
-  import throughput, os, httpclient
+  import throughput, os
   var proxy = newSocksServer()
   echo "SOCKS Proxy listens on: ", proxy.listenPort
   proxy.allowedSocksVersions = {SOCKS_V4, SOCKS_V5}
   proxy.allowedAuthMethods = {USERNAME_PASSWORD, NO_AUTHENTICATION_REQUIRED}
-  # proxy.allowedAuthMethods = {USERNAME_PASSWORD}
 
-  # proxy.allowedAuthMethods = {}
+  ## If the proxy server should log hosts
+  proxy.shouldLogHost = false
+  if proxy.shouldLogHost:
+    proxy.logFile = open("hosts.txt", fmAppend)
+    proxy.logFileReverse = open("hostsReverse.txt", fmAppend)
 
   ## Add a valid user / password combination
   proxy.addUser("hans", "peter")
 
   ## Download blacklist, !! this overwrites the old list !!
+  # import httpclient
   # let blacklistUrl = "https://raw.githubusercontent.com/notracking/hosts-blocklists/master/dnscrypt-proxy/dnscrypt-proxy.blacklist.txt"
   # var client = newHttpClient()
   # writeFile(getAppDir() / "blacklist.txt", client.getContent(blacklistUrl))
@@ -432,9 +433,8 @@ when isMainModule:
   # ]
 
   ## For a static host replacement:
-  proxy.staticHosts.add("peter.peter", "ch4t.code0.xyz")
+  proxy.staticHosts["peter.peter"] = "ch4t.code0.xyz"
 
   asyncCheck proxy.serve()
   asyncCheck proxy.dumpThroughput()
-  # asyncCheck proxy.dumpThroughput()
   runForever()

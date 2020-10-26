@@ -20,7 +20,7 @@ proc reverseNotation*(hostname: string): string =
     buf: string = ""
     ch: char
   while true:
-    if pos == hostname.len: 
+    if pos == hostname.len:
       result.insert(buf,0)
       break
     ch = hostname[pos]
@@ -47,8 +47,6 @@ when isMainModule:
     discard reverseDomain("foo.baa.foo.baa.foo.baa")
 
 when isMainModule:
-    # echo "server.example.loc".reverseNotation
-    # echo "server.example.loc.".reverseNotation
     assert  "foo".reverseNotation == "foo"
     assert  "foo.baa".reverseNotation == "baa.foo"
     assert  "foo.baa.baz".reverseNotation == "baz.baa.foo"

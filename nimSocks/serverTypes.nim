@@ -17,6 +17,7 @@ type SocksServer* = ref object
   whitelistHostFancy*: seq[BlacklistEntry]
   serverSocket*: AsyncSocket
   staticHosts*: Table[string, string]
+  shouldLogHost*: bool
   logFile*: File
   logFileReverse*: File
   users*: TableRef[string, SHA512Digest]

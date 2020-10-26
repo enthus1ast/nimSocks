@@ -85,8 +85,4 @@ when isMainModule:
   bc.count( Ressource(kind: ATYP.DOMAINNAME, value: "klaus"), upstream )
   bc.count( Ressource(kind: ATYP.DOMAINNAME, value: "klaus"), upstream )
   bc.count( Ressource(kind: ATYP.DOMAINNAME, value: "klaus"), downstream )
-  # echo bc.ressourceTable[("klaus", upstream)]
-  # echo bc.ressourceTable[("klaus", downstream)]
-  echo "klaus: ", bc.ressourceInfo("klaus")
-  echo $bc
   bc.listRessources()

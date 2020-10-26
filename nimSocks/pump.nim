@@ -30,20 +30,19 @@ proc pump*(proxy: SocksServer, s1, s2: AsyncSocket, direction: Direction, ressou
       dbg "break 1"
       break
     else:
-      # write(stdout, buffer) ## DBG
       ## Throughtput monitoring
       proxy.byteCounter.count(Ressource(kind: atyp, value: $ressource), direction, buffer.len)
 
       try:
         proxy.transferedBytes.inc(buffer.len)
       except:
-        echo 4, getCurrentExceptionMsg()
+        dbg 4, getCurrentExceptionMsg()
         proxy.transferedBytes = 0 # reset if overflow
 
       try:
         await s2.send(buffer)
       except:
-        echo 5, getCurrentExceptionMsg()
+        dbg 5, getCurrentExceptionMsg()
         dbg "send excepted"
         break
 

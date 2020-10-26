@@ -10,6 +10,7 @@
 ## SOCKS4/4a/5 type definitions
 
 import net, asyncnet, asyncdispatch, strutils
+import dbg
 
 const
   DEFAULT_PORT* = 1080
@@ -213,15 +214,12 @@ proc parseHost(host: string): tuple[atyp: byte, data: seq[byte]] =
     ipaddr = host.parseIpAddress()
     case ipaddr.family
     of IPv4:
-      # echo "IPv4"
       result.atyp = IP_V4_ADDRESS.byte
       result.data = ipaddr.address_v4.toBytes()
     of IPv6:
-      # echo "IPv6"
       result.atyp = IP_V6_ADDRESS.byte
       result.data = ipaddr.address_v6.toBytes()
   except:
-      # echo "DOMAINNAME"
       result.atyp = DOMAINNAME.byte
       result.data = host.len.byte & host.toBytes()
 
@@ -236,7 +234,6 @@ proc newSocksRequest*(
   result.rsv = RESERVED.byte
   (result.atyp, result.dst_addr) = address.parseHost()
   result.dst_port = port.unPort()
-  echo repr result
 
 proc newSocksResponse*(socksRequest: SocksRequest, rep: REP): SocksResponse =
   result = SocksResponse()
@@ -244,8 +241,6 @@ proc newSocksResponse*(socksRequest: SocksRequest, rep: REP): SocksResponse =
   result.rep = rep.byte
   result.rsv = RESERVED.byte
   result.atyp = socksRequest.atyp
-  # echo "Atype: ", result.atyp
-  # echo "Atype: ", ATYP(result.atyp)
   case result.atyp.ATYP
   of IP_V4_ADDRESS, IP_V6_ADDRESS:
     result.bnd_addr = socksRequest.dst_addr
@@ -275,7 +270,6 @@ proc newSocksUserPasswordRequest*(username: string, password: string): SocksUser
 proc parseDestAddress*(bytes: seq[byte], atyp: ATYP): string =
   # TODO should use proper type!
   result = ""
-  #echo "SCHOULD PARSE: " , repr cast[array[16,char]](bytes)
   for idx, ch in bytes:
     case atyp
     of DOMAINNAME:
@@ -328,18 +322,12 @@ proc recvSocksUserPasswordRequest*(client:AsyncSocket, obj: SocksUserPasswordReq
   return true
 
 proc parseEnum[T](bt: byte): T =
-  ## TODO
-  # for elem in T:
-  #   if bt.T == elem:
-  #     return bt.T
   try:
     return T(bt)
   except:
-    echo "INVALID BYTE"
     raise newException(ValueError, "invalid byte")
 
 proc inEnum[T](bt: byte): bool =
-  ## TODO
   try:
     discard parseEnum[T](bt)
     return true
@@ -360,7 +348,7 @@ proc recvSocksRequest*(client:AsyncSocket, obj: SocksRequest): Future[bool] {.as
     obj.atyp = await client.recvByte
     if not inEnum[ATYP](obj.atyp): return false
   except:
-    echo getCurrentExceptionMsg()
+    dbg getCurrentExceptionMsg()
     return false
 
   ## TODO these still fail hard
@@ -412,7 +400,7 @@ proc recvSocksUserPasswordResponse*(client:AsyncSocket, obj: SocksUserPasswordRe
   try:
     obj.authVersion = await client.recvByte
   except:
-    echo "recvSocksUserPasswordResponse failed"
+    dbg "recvSocksUserPasswordResponse failed"
     return false
   if obj.authVersion != AuthVersionV1.byte: return false
   obj.status = await client.recvByte
@@ -423,7 +411,7 @@ proc recvSocksVersion*(client:AsyncSocket, socksVersionRef: SocksVersionRef): Fu
   try:
     socksVersionRef.socksVersion = await client.recvByte
   except:
-    echo "recvSocksVersion failed"
+    dbg "recvSocksVersion failed"
     return false
   if not inEnum[SOCKS_VERSION](socksVersionRef.socksVersion): return false
   return true
@@ -437,7 +425,7 @@ proc recvSocks4Request*(client:AsyncSocket, obj: Socks4Request): Future[bool] {.
     obj.dst_ip = await client.recvBytes(IP_V4_ADDRESS_LEN)
     obj.userid = await client.recvNullTerminated()
   except:
-    echo getCurrentExceptionMsg()
+    dbg getCurrentExceptionMsg()
     return false
   return true
 

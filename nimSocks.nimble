@@ -1,6 +1,6 @@
 # Package
 
-version       = "0.1.3"
+version       = "0.1.4"
 author        = "enthus1ast"
 description   = "SOCKS server and client"
 license       = "MIT"
