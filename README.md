@@ -38,7 +38,7 @@ a filtering (standalone) SOCKS proxy server and client library for nim.
 ## usage
 
 ```nim
-  import throughput, os, httpclient
+  import nimSocks/server
   var proxy = newSocksServer()
   echo "SOCKS Proxy listens on: ", proxy.listenPort
   proxy.allowedSocksVersions = {SOCKS_V4, SOCKS_V5}
