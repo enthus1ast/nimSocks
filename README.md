@@ -9,13 +9,62 @@ a filtering (standalone) SOCKS proxy server and client library for nim.
 - domain target white/black-listing
 - static hosts
 
+## SOCKS Compatibility Table
+
+| Socks Version | TCP | UDP | IPv4 | IPv6 | Hostname |
+| --- | :---: | :---: | :---: | :---: | :---: |
+| SOCKS v4 | ✅ | ❌ | ✅ | ❌ | ❌ |
+| SOCKS v4a | ✅ | ❌ | ✅ | ❌ | ✅ |
+| SOCKS v5 | ✅ | ✅ | ✅ | ✅ | ✅ |
+
+## nimSocks implementation
+| lib | TCP connect | TCP accociate | UDP bind |
+| --- | :---: | :---: | :---: |
+|server | ✅ | ❌ | ❌ |
+|client | ✅ | ❌ | ❌ |
+
+| lib | SOCKS v4 | SOCKS v4a | SOCKS v5 |
+| --- | :---: | :---: | :---: |
+|server | ✅ | ✅ | ✅ |
+|client | ❌ | ❌ | ✅ |
+
+| auth | no auth | user/password |
+| --- | :---: | :---: |
+|server | ✅ | ✅ |
+|client | ✅ | ✅ |
+
+
 # server
-## example filter file 
+## usage
+
+```nim
+  import throughput, os, httpclient
+  var proxy = newSocksServer()
+  echo "SOCKS Proxy listens on: ", proxy.listenPort
+  proxy.allowedSocksVersions = {SOCKS_V4, SOCKS_V5}
+  proxy.allowedAuthMethods = {USERNAME_PASSWORD, NO_AUTHENTICATION_REQUIRED}
+
+  ## Add a valid user / password combination
+  proxy.addUser("hans", "peter")
+
+  ## For a static host replacement:
+  proxy.staticHosts.add("peter.peter", "example.org")
+
+  asyncCheck proxy.serve()
+  asyncCheck proxy.dumpThroughput()
+  runForever()
+```
+
+## black and whitelisting example filter file 
 (full domain match only)
+
+for a good blacklist file use
+https://raw.githubusercontent.com/notracking/hosts-blocklists/master/dnscrypt-proxy/dnscrypt-proxy.blacklist.txt
 
 files 
 - whitelist.txt
 - blacklist.txt
+
 
 ```
 nim-lang.org
@@ -63,7 +112,7 @@ proxy.staticHosts.add("baa.loc", "192.168.1.1")
 ```
 
 # client
-the client can only "upgrade" your socket atm.
+the client can "upgrade" your socket.
 
 ```nim
 var sock = waitFor asyncnet.dial("127.0.0.1", Port 1080 ) # dial to the socks server 
@@ -75,7 +124,7 @@ assert true == waitFor sock.doSocksHandshake(
 assert true == waitFor sock.doSocksConnect("example.org", Port 80) # instruct the proxy to connect to target host (by tcp)
 
 # Then do normal socket operations
-sock.send(FOO)
+sock.send("FOO")
 ```
 
 ## proxy hopping
@@ -95,13 +144,9 @@ assert true == waitFor sock.doSocksConnect("mytarget.loc", Port 80)
 sock.send(FOO) # from here we speak to "mytarget.loc"
 sock.close() # will destroy the whole tunnel
 ```
-
-## getLocalAddr 
-Since the SOCKS proxy server is acting on our behalf, 
-we cannot use `sock.getLocalAddr` to aquire our address.
-The server has to provides these data.
  
 ## random examples
 ```
 $ ncat --proxy 127.0.0.1:1080 --proxy-type socks5 --proxy-auth hans:peter  2a02:bbb:aaa:9daa:ff11:a4ff:aaaa:bbbb 9090
+$ curl --socks5-basic --socks5 hans:peter@127.0.0.1:1080 google.de
 ```
