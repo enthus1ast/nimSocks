@@ -1,5 +1,5 @@
-import types,net,asyncnet,tables,nimSHA2,byteCounter,domainfilter
-export types,net,asyncnet,tables,nimSHA2,byteCounter,domainfilter
+import types, net, asyncnet, tables, nimSHA2, byteCounter, domainfilter, sets, hashes
+export types, net, asyncnet, tables, nimSHA2, byteCounter, domainfilter, sets, hashes
 const
   SIZE* = 87_380 ## max size the buffer could be
               ## but since we peek on the sockets,
@@ -11,9 +11,9 @@ const
 type SocksServer* = ref object
   listenPort*: Port
   listenHost*: string
-  blacklistHost*: seq[string]
+  blacklistHost*: HashSet[Hash]
   blacklistHostFancy*: seq[BlacklistEntry]
-  whitelistHost*: seq[string]
+  whitelistHost*: HashSet[Hash]
   whitelistHostFancy*: seq[BlacklistEntry]
   serverSocket*: AsyncSocket
   staticHosts*: Table[string, string]

@@ -10,7 +10,7 @@
 #
 ## nimSocks small filter language.
 
-import strutils
+import strutils, sets, hashes
 
 type
   CheckType* = enum
@@ -58,13 +58,13 @@ proc isListed*(bentries: seq[BlacklistEntry], host: string): bool =
 
 
 # The 'legacy' filter functions
-proc loadList*(path: string): seq[string] =
-  result = @[]
+proc loadList*(path: string): HashSet[Hash]=
+  result = initHashSet[Hash]()
   var lineBuf = ""
   for line in lines path:
     lineBuf = line.strip()
     if lineBuf.startsWith('#'): continue
-    result.add lineBuf
+    result.incl hash(lineBuf)
 
 
 when isMainModule:

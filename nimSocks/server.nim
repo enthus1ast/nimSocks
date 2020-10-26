@@ -32,9 +32,7 @@ proc newSocksServer(
   result = SocksServer()
   result.listenPort = listenPort
   result.listenHost = listenHost
-  result.blacklistHost = @[]
   result.blacklistHostFancy = @[]
-  result.whitelistHost = @[]
   result.whitelistHostFancy = @[]
   result.serverSocket = newAsyncSocket()
   result.staticHosts = initTable[string, string]()
@@ -45,16 +43,14 @@ proc newSocksServer(
   result.allowedSocksCmds = {SocksCmd.CONNECT}
   result.allowedSocksVersions = allowedSocksVersions
   result.transferedBytes = 0
-  # result.socks4Enabled = socks4Enabled
-  # result.socks5Enabled = socks5Enabled
   result.stallingTimeout = STALLING_TIMEOUT
   result.byteCounter = newByteCounter()
 
 proc isBlacklisted(proxy: SocksServer, host: string): bool =
-  return host in proxy.blacklistHost or proxy.blacklistHostFancy.isListed(host)
+  return hash(host) in proxy.blacklistHost or proxy.blacklistHostFancy.isListed(host)
 
 proc isWhitelisted(proxy: SocksServer, host: string): bool =
-  return host in proxy.whitelistHost or proxy.whitelistHostFancy.isListed(host)
+  return hash(host) in proxy.whitelistHost or proxy.whitelistHostFancy.isListed(host)
 
 proc isListed(proxy: SocksServer, host: string): bool =
   if proxy.whitelistHost.len == 0 and proxy.whitelistHostFancy.len == 0:
@@ -410,20 +406,25 @@ when not defined release:
     assert proxy.authenticate("as hans", "dd cpeter ") == false
 
 when isMainModule:
-  import throughput
+  import throughput, os, httpclient
   var proxy = newSocksServer()
-  echo "SOCKS Proxy listens on:", proxy.listenPort
+  echo "SOCKS Proxy listens on: ", proxy.listenPort
   proxy.allowedSocksVersions = {SOCKS_V4, SOCKS_V5}
-  # proxy.allowedAuthMethods = {USERNAME_PASSWORD, NO_AUTHENTICATION_REQUIRED}
-  proxy.allowedAuthMethods = {USERNAME_PASSWORD}
+  proxy.allowedAuthMethods = {USERNAME_PASSWORD, NO_AUTHENTICATION_REQUIRED}
+  # proxy.allowedAuthMethods = {USERNAME_PASSWORD}
 
   # proxy.allowedAuthMethods = {}
 
   ## Add a valid user / password combination
   proxy.addUser("hans", "peter")
 
+  ## Download blacklist, !! this overwrites the old list !!
+  # let blacklistUrl = "https://raw.githubusercontent.com/notracking/hosts-blocklists/master/dnscrypt-proxy/dnscrypt-proxy.blacklist.txt"
+  # var client = newHttpClient()
+  # writeFile(getAppDir() / "blacklist.txt", client.getContent(blacklistUrl))
+
   ## Files for black and whitelisting
-  proxy.blacklistHost = loadList("blacklist.txt")
+  proxy.blacklistHost = loadList(getAppDir() / "blacklist.txt")
   # proxy.blacklistHostFancy = loadListFancy("blacklistFancy.txt")
   # proxy.whitelistHostFancy = loadListFancy("whitelistFancy.txt")
   # proxy.whitelistHost = @[
