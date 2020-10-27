@@ -40,6 +40,7 @@ doAssert ffilter.isListed("f00.baa") == false
 doAssert ffilter.isListed("FOO.baa") == false
 
 
+## test the simple filter (host line by line)
 let exampleSimpleFilter = """
 foo
 baa

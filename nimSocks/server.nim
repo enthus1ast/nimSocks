@@ -2,7 +2,7 @@
 #
 #                  nimSocks
 #          SOCKS4/4a/5 proxy server
-#            (c) Copyright 2018
+#            (c) Copyright 2020
 #        David Krause, Tobias Freitag
 #
 #    See the file "LICENSE", included in this
@@ -10,26 +10,19 @@
 #
 ## SOCKS4/4a/5 proxy server
 
-## Known Bugs
-#
-
-
 import asyncdispatch, asyncnet, nativesockets, tables, dbg
-import serverTypes, pump
 import reverseDomainNotation
-
-export serverTypes
-
-# when ENABLE_MONITORING:
+import pump
 import byteCounter
+
+import serverTypes
+export serverTypes
 
 proc newSocksServer*(
     listenPort: Port = Port(DEFAULT_PORT),
     listenHost: string = "",
     allowedAuthMethods: set[AuthenticationMethod] = {USERNAME_PASSWORD},
     allowedSocksVersions: set[SOCKS_VERSION] = {SOCKS_V4, SOCKS_V5},
-    # socks4Enabled = false,
-    # socks5Enabled = true,
 ): SocksServer =
   result = SocksServer()
   result.listenPort = listenPort
@@ -38,8 +31,6 @@ proc newSocksServer*(
   result.whitelistHostFancy = @[]
   result.serverSocket = newAsyncSocket()
   result.staticHosts = initTable[string, string]()
-  # result.logFile = open("hosts.txt", fmAppend)
-  # result.logFileReverse = open("hostsReverse.txt", fmAppend)
   result.users = newTable[string, SHA512Digest]()
   result.allowedAuthMethods = allowedAuthMethods
   result.allowedSocksCmds = {SocksCmd.CONNECT}

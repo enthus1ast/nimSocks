@@ -2,6 +2,7 @@ discard """
   action: "run"
   batchable: false
   joinable: false
+  target: "c cpp"
 """
 
 ## Tests if client and server compiles, and if the client can send data back and forth
@@ -10,7 +11,6 @@ discard """
 import asyncdispatch, asyncnet
 import ../../nimSocks/server
 import ../../nimSocks/client
-import os
 
 const
   HOST = "127.0.0.1"
@@ -51,6 +51,5 @@ proc test() {.async.} =
   asyncCheck clientSock.send(TST2 & "\n")
   doAssert TST2 == await client.recvLine()
   quit(0)
-
 
 waitFor test()

@@ -2,7 +2,7 @@
 #
 #                  nimSocks
 #          SOCKS4/4a/5 proxy server
-#            (c) Copyright 2018
+#            (c) Copyright 2020
 #        David Krause, Tobias Freitag
 #
 #    See the file "LICENSE", included in this
