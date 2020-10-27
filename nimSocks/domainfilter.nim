@@ -18,7 +18,6 @@ type
     END = "end" # match end
     CON = "con" # contains
     EQL = "eql" # equal
-
   BlacklistEntry* = tuple
     checkType: CheckType
     line: string
@@ -35,7 +34,6 @@ proc matched*(bentry: BlacklistEntry, str: string): bool =
 
 proc loadListFromStr*(str: string): seq[BlacklistEntry] =
   result = @[]
-
   var idx = 0
   for ln in str.splitLines():
     idx.inc
@@ -50,29 +48,31 @@ proc loadListFromStr*(str: string): seq[BlacklistEntry] =
 proc loadListFancy*(path: string): seq[BlacklistEntry] =
   return loadListFromStr(readFile(path))
 
-proc isListed*(bentries: seq[BlacklistEntry], host: string): bool =
+proc isListed*(bentries: seq[BlacklistEntry], host: string): bool {.inline.} =
+  ## Returns true if the given host ist listed in Fancy filters list
   for bentry in bentries:
     if bentry.matched(host) == true: return true
   return false
 
+proc isListed*(bentries: HashSet[Hash], host: string): bool {.inline.} =
+  ## Returns true if the given host ist listed in simple filters list
+  return hash(host) in bentries
 
-# The 'legacy' filter functions
-proc loadList*(path: string): HashSet[Hash]=
+template sanLine(ll: HashSet[Hash], line: string) =
+  let lineBuf = line.strip()
+  if not lineBuf.startsWith('#'):
+    ll.incl hash(lineBuf)
+
+proc useList*(str: string): HashSet[Hash] =
+  ## loads a simple filter list from memory
+  ## simple filters are faster then fancy filters!
   result = initHashSet[Hash]()
-  var lineBuf = ""
+  for line in str.splitLines():
+    result.sanLine(line)
+
+proc loadList*(path: string): HashSet[Hash] =
+  ## loads a simple filter list from filesystem
+  ## simple filters are faster then fancy filters!
+  result = initHashSet[Hash]()
   for line in lines path:
-    lineBuf = line.strip()
-    if lineBuf.startsWith('#'): continue
-    result.incl hash(lineBuf)
-
-
-when isMainModule:
-  assert parseBlacklistLine("sta foo") == (STA, "foo" )
-  assert parseBlacklistLine("sta  foo")  == (STA, "foo" )
-  assert parseBlacklistLine("end facebook.com").matched("www2.facebook.com") == true
-  # assert parseBlacklistLine("# sta  foo")  == (REM, "sta  foo")
-
-  var blackList = loadListFancy("blacklistFancy.txt")
-  for bentry in blackList:
-    echo $bentry, " | LISTED => ", bentry.matched("www2.facebook.com")
-
+    result.sanLine(line)

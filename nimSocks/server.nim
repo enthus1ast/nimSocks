@@ -49,10 +49,10 @@ proc newSocksServer*(
   result.byteCounter = newByteCounter()
 
 proc isBlacklisted(proxy: SocksServer, host: string): bool =
-  return hash(host) in proxy.blacklistHost or proxy.blacklistHostFancy.isListed(host)
+  return proxy.blacklistHost.isListed(host) or proxy.blacklistHostFancy.isListed(host)
 
 proc isWhitelisted(proxy: SocksServer, host: string): bool =
-  return hash(host) in proxy.whitelistHost or proxy.whitelistHostFancy.isListed(host)
+  return proxy.whitelistHost.isListed(host) or proxy.whitelistHostFancy.isListed(host)
 
 proc isListed(proxy: SocksServer, host: string): bool =
   if proxy.whitelistHost.len == 0 and proxy.whitelistHostFancy.len == 0:
