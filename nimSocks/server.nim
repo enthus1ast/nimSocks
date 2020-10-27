@@ -10,7 +10,7 @@
 #
 ## SOCKS4/4a/5 proxy server
 
-import asyncdispatch, asyncnet, nativesockets, tables, dbg
+import asyncdispatch, asyncnet, nativesockets, tables, dbg, intsets
 import reverseDomainNotation
 import pump
 import byteCounter
@@ -151,14 +151,14 @@ proc processSocks5(proxy: SocksServer, client: AsyncSocket): Future[bool] {.asyn
 
   # Check if authentication method is supported and allowed by server
   if not (reqMessageSelection.methods in proxy.allowedAuthMethods):
-    respMessageSelection.selectedMethod = NO_ACCEPTABLE_METHODS.byte
+    respMessageSelection.selectedMethod = NO_ACCEPTABLE_METHODS
     await client.send($respMessageSelection)
     return
 
   # Chose authentication methods
-  if USERNAME_PASSWORD.byte in reqMessageSelection.methods:
+  if USERNAME_PASSWORD in reqMessageSelection.methods:
     dbg "Got user password Authentication"
-    respMessageSelection.selectedMethod = USERNAME_PASSWORD.byte
+    respMessageSelection.selectedMethod = USERNAME_PASSWORD
     await client.send($respMessageSelection)
 
     var socksUserPasswordReq = SocksUserPasswordRequest()
@@ -178,8 +178,8 @@ proc processSocks5(proxy: SocksServer, client: AsyncSocket): Future[bool] {.asyn
       await client.send($socksUserPasswordResp)
       return
 
-  elif NO_AUTHENTICATION_REQUIRED.byte in reqMessageSelection.methods:
-    respMessageSelection.selectedMethod = NO_AUTHENTICATION_REQUIRED.byte
+  elif NO_AUTHENTICATION_REQUIRED in reqMessageSelection.methods:
+    respMessageSelection.selectedMethod = NO_AUTHENTICATION_REQUIRED
     await client.send($respMessageSelection)
   else:
     dbg "Not supported authentication method"

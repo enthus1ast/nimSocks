@@ -24,18 +24,19 @@ type
     SOCKS_V4 = 0x04.byte # same as 4a
     SOCKS_V5 = 0x05.byte
   RequestMessageSelection* = ref object
-    version*: byte
+    version*: SOCKS_VERSION
     methodsLen*: byte
-    methods*: seq[byte]
+    methods*: seq[AuthenticationMethod]
   ResponseMessageSelection* = ref object
-    version*: byte
-    selectedMethod*: byte
+    version*: SOCKS_VERSION
+    selectedMethod*: AuthenticationMethod
   AuthenticationMethod* = enum
     NO_AUTHENTICATION_REQUIRED = 0x00.byte
     GSSAPI = 0x01.byte
     USERNAME_PASSWORD = 0x02.byte
     # to X'7F' IANA ASSIGNED = 0x03
     # to X'FE' RESERVED FOR PRIVATE METHODS = 0x80
+    # RESERVED = 0x03.byte .. 0xFE.byte ## <-- would be nice to have
     NO_ACCEPTABLE_METHODS = 0xFF.byte
   AuthVersion* = enum
     AuthVersionV1 = 0x01.byte
@@ -66,14 +67,14 @@ type
 
   # Socks5
   SocksRequest* = ref object
-    version*: byte
+    version*: SOCKS_VERSION
     cmd*: byte
     rsv*: byte
     atyp*: byte
     dst_addr*: seq[byte]
     dst_port*: tuple[h: byte, l: byte]
   SocksResponse* = ref object
-    version*: byte
+    version*: SOCKS_VERSION
     rep*: byte
     rsv*: byte
     atyp*: byte
@@ -119,6 +120,11 @@ proc toBytes*(arr: openarray[uint8]): seq[byte] =
   result = @[]
   for el in arr:
     result.add el.byte
+
+proc contains*[T](xx: set[T]; yy: seq[T]): bool =
+  for elem in yy:
+    if elem in xx: return true
+  return false
 
 proc `in`*(bytesMethod: seq[byte], authMethods: set[AuthenticationMethod]): bool =
   for byteMethod in bytesMethod:
@@ -197,10 +203,26 @@ proc toSeq*(str: string): seq[byte] =
   for ch in str:
     result.add ch.byte
 
-proc toSeq*(obj: set[AuthenticationMethod]): seq[byte] =
+# proc toSeq*(obj: set[AuthenticationMethod]): seq[byte] =
+#   result = @[]
+#   for ch in obj:
+#     result.add ch.byte
+
+proc toSeq*[T](obj: seq[byte], myType : typedesc[T] ): seq[T] =
   result = @[]
   for ch in obj:
-    result.add ch.byte
+    result.add ch.T
+
+
+proc toSeq*[T](obj: set[byte]): seq[T] =
+  result = @[]
+  for ch in obj:
+    result.add ch.T
+
+proc toSeq*[T](obj: set[T]): seq[T] =
+  result = @[]
+  for ch in obj:
+    result.add ch.T
 
 proc port*(t: tuple[h, l: byte]): Port =
   return Port(t.h.int * 256 + t.l.int)
@@ -229,7 +251,7 @@ proc newSocksRequest*(
 ): SocksRequest =
   if address.len == 0: raise newException(ValueError, "address should not be empty")
   result = SocksRequest()
-  result.version  = socksVersion.byte
+  result.version  = socksVersion
   result.cmd = cmd.byte
   result.rsv = RESERVED.byte
   (result.atyp, result.dst_addr) = address.parseHost()
@@ -250,14 +272,14 @@ proc newSocksResponse*(socksRequest: SocksRequest, rep: REP): SocksResponse =
 
 proc newRequestMessageSelection*(version: SOCKS_VERSION, methods: set[AuthenticationMethod]): RequestMessageSelection =
   result = RequestMessageSelection()
-  result.version = version.byte
+  result.version = version
   result.methodsLen = methods.toSeq().len.byte
   result.methods = methods.toSeq()
 
 proc newResponseMessageSelection*(version: SOCKS_VERSION, selectedMethod: AuthenticationMethod): ResponseMessageSelection =
   result = ResponseMessageSelection()
-  result.version = version.byte
-  result.selectedMethod = selectedMethod.byte
+  result.version = version
+  result.selectedMethod = selectedMethod
 
 proc newSocksUserPasswordRequest*(username: string, password: string): SocksUserPasswordRequest =
   result = SocksUserPasswordRequest()
@@ -336,8 +358,7 @@ proc inEnum[T](bt: byte): bool =
 
 proc recvSocksRequest*(client:AsyncSocket, obj: SocksRequest): Future[bool] {.async.} =
   try:
-    obj.version = await client.recvByte
-    if not inEnum[SOCKS_VERSION](obj.version): return false
+    obj.version = (await client.recvByte).SOCKS_VERSION
 
     obj.cmd = await client.recvByte
     if not inEnum[SocksCmd](obj.cmd): return false
@@ -360,41 +381,59 @@ proc recvSocksRequest*(client:AsyncSocket, obj: SocksRequest): Future[bool] {.as
   return true
 
 proc recvSocksResponse*(client:AsyncSocket, obj: SocksResponse): Future[bool] {.async.} =
-  obj.version = await client.recvByte
-  if not inEnum[SOCKS_VERSION](obj.version): return false
+  try:
+    obj.version = (await client.recvByte).SOCKS_VERSION
 
-  obj.rep = await client.recvByte
-  if not inEnum[REP](obj.rep): return false
+    obj.rep = await client.recvByte
+    if not inEnum[REP](obj.rep): return false
 
-  obj.rsv = await client.recvByte
-  if obj.rsv != RESERVED.byte: return false
+    obj.rsv = await client.recvByte
+    if obj.rsv != RESERVED.byte: return false
 
-  obj.atyp = await client.recvByte
-  if not inEnum[ATYP](obj.atyp): return false
+    obj.atyp = await client.recvByte
+    if not inEnum[ATYP](obj.atyp): return false
 
-  obj.bnd_addr = case obj.atyp.ATYP
-    of IP_V4_ADDRESS: await client.recvBytes(IP_V4_ADDRESS_LEN)
-    of DOMAINNAME: await client.recvBytes((await client.recvByte).int)
-    of IP_V6_ADDRESS: await client.recvBytes(IP_V6_ADDRESS_LEN)
+    obj.bnd_addr = case obj.atyp.ATYP
+      of IP_V4_ADDRESS: await client.recvBytes(IP_V4_ADDRESS_LEN)
+      of DOMAINNAME: await client.recvBytes((await client.recvByte).int)
+      of IP_V6_ADDRESS: await client.recvBytes(IP_V6_ADDRESS_LEN)
 
-  obj.bnd_port = (await client.recvByte, await client.recvByte)
+    obj.bnd_port = (await client.recvByte, await client.recvByte)
+  except:
+    return false
   return true
+
 
 proc recvRequestMessageSelection*(client:AsyncSocket, obj: RequestMessageSelection): Future[bool] {.async.} =
-  obj.version = SOCKS_V5.byte
+  obj.version = SOCKS_V5
 
-  obj.methodsLen = await client.recvByte
+  try:
+    obj.methodsLen = await client.recvByte
+  except:
+    return false
   if obj.methodsLen < 1: return false
 
-  obj.methods = await client.recvBytes(obj.methodsLen.int)
+  try:
+    obj.methods = (await client.recvBytes(obj.methodsLen.int)).toSeq(AuthenticationMethod)
+  except:
+    return false
+
   return true
+
 
 proc recvResponseMessageSelection*(client:AsyncSocket, obj: ResponseMessageSelection): Future[bool] {.async.} =
-  obj.version = await client.recvByte
-  if not inEnum[SOCKS_VERSION](obj.version): return false
+  try:
+    obj.version = (await client.recvByte).SOCKS_VERSION
+  except:
+    return false
 
-  obj.selectedMethod = await client.recvByte
+  try:
+    obj.selectedMethod = (await client.recvByte).AuthenticationMethod
+  except:
+    return false
+
   return true
+
 
 proc recvSocksUserPasswordResponse*(client:AsyncSocket, obj: SocksUserPasswordResponse): Future[bool] {.async.} =
   try:
