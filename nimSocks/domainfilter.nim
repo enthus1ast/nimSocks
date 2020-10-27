@@ -10,11 +10,10 @@
 #
 ## nimSocks small filter language.
 
-import strutils, sets, hashes
+import strutils, sets, hashes, dbg
 
 type
   CheckType* = enum
-    # REM = "#"
     STA = "sta" # match start
     END = "end" # match end
     CON = "con" # contains
@@ -44,7 +43,7 @@ proc loadListFromStr*(str: string): seq[BlacklistEntry] =
     if ln.strip().startsWith('#'): continue
     let be = parseBlacklistLine(ln)
     if be.line == "":
-      echo "Empty rule on line:", idx
+      dbg "Empty rule on line:", idx
     else:
       result.add be
 

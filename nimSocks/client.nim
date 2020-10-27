@@ -13,7 +13,7 @@ import net, asyncdispatch, asyncnet, nativesockets
 import types
 import dbg
 
-# type SocksClient = object 
+# type SocksClient = object
 #   clientSocket: AsyncSocket
 #   allowedAuthMethods: set[AuthenticationMethod]
 
@@ -31,7 +31,7 @@ proc doSocksHandshake*(
   username: string = "",
   password: string = "",
   version: SOCKS_VERSION = SOCKS_V5
-): Future[bool] {.async.} = 
+): Future[bool] {.async.} =
   var req = newRequestMessageSelection(version, methods)
   await clientSocket.send($req)
 
@@ -52,13 +52,13 @@ proc doSocksHandshake*(
 
     if socksUserPasswordResponse.status != SUCCEEDED.byte:
       return false
-      # SUCCEEDED = 0x00
-      # FAILED = 0x01    
+
     return true
 
   of NO_ACCEPTABLE_METHODS:
     return false
   else: return false
+
 
 proc doSocksConnect*(clientSocket: AsyncSocket, targetHost: string, targetPort: Port) : Future[bool] {.async.} =
   var socksReq = newSocksRequest(SocksCmd.CONNECT, targetHost, targetPort)
@@ -66,39 +66,41 @@ proc doSocksConnect*(clientSocket: AsyncSocket, targetHost: string, targetPort: 
   var socksResp = SocksResponse()
   if not (await clientSocket.recvSocksResponse(socksResp)): return false
   if socksResp.rep != SUCCEEDED.byte: return false
-  # Maybe raise exception?
-  # HOST_UNREACHABLE  
   return true
 
 when isMainModule:
-  # import httpclient 
+  # import httpclient
 
   # var sock = waitFor asyncnet.dial("127.0.0.1", Port 1080 )
-  # echo waitFor sock.doSocksHandshake(username="hans", password="peter", 
+  # echo waitFor sock.doSocksHandshake(username="hans", password="peter",
   #   methods={NO_AUTHENTICATION_REQUIRED, USERNAME_PASSWORD}) # the "best" supported gets choosen by the server
-  
+
   # # echo waitFor sock.doSocksConnect("::1", Port 9988)
   # # echo waitFor sock.doSocksConnect("192.168.178.123", Port 9988)
   # echo waitFor sock.doSocksConnect("example.org", Port 80)
 
-  var sock = waitFor asyncnet.dial("127.0.0.1", Port 1080 ) # dial to the socks server 
+  var sock = waitFor asyncnet.dial("127.0.0.1", Port 1080 ) # dial to the socks server
   assert true == waitFor sock.doSocksHandshake(
-      username="username", 
-      password="password", 
+      username = "username",
+      password = "password",
+      version = SOCKS_V5,
 
       # the "best" auth supported gets choosen by the server!
-      methods={NO_AUTHENTICATION_REQUIRED, USERNAME_PASSWORD} 
-      ) 
+      # methods={NO_AUTHENTICATION_REQUIRED, USERNAME_PASSWORD}
+      methods={NO_AUTHENTICATION_REQUIRED}
+      )
 
   # instruct the proxy to connect to target host (by tcp)
-  assert true == waitFor sock.doSocksConnect("example.org", Port 80) 
+  # assert true == waitFor sock.doSocksConnect("example.org", Port 80)
+  assert true == waitFor sock.doSocksConnect("127.0.0.1", Port 8000)
 
+  echo "Send http..."
 
   # Then do normal socket operations
   var hh = """GET / HTTP/1.1
 Host: example.org
 
-  """ 
+  """
   echo hh
   waitFor sock.send(hh)
   var buf = ""

@@ -18,10 +18,12 @@ import asyncdispatch, asyncnet, nativesockets, tables, dbg
 import serverTypes, pump
 import reverseDomainNotation
 
+export serverTypes
+
 # when ENABLE_MONITORING:
 import byteCounter
 
-proc newSocksServer(
+proc newSocksServer*(
     listenPort: Port = Port(DEFAULT_PORT),
     listenHost: string = "",
     allowedAuthMethods: set[AuthenticationMethod] = {USERNAME_PASSWORD},
@@ -85,7 +87,7 @@ proc authenticate(proxy: SocksServer, username, password: string): bool =
   if hashedPassword.final() == hashFromDb:
     result = true
 
-proc addUser(proxy: SocksServer, username: string, password: string) =
+proc addUser*(proxy: SocksServer, username: string, password: string) =
   if proxy.users.hasKey(username): raise newException(ValueError, "User already exists.")
   if username.len == 0: raise newException(ValueError, "Username required.")
   if password.len == 0: raise newException(ValueError, "Password required.")
@@ -369,7 +371,7 @@ proc processClient(proxy: SocksServer, client: AsyncSocket): Future[void] {.asyn
 
 
 
-proc serve(proxy: SocksServer): Future[void] {.async.} =
+proc serve*(proxy: SocksServer): Future[void] {.async.} =
   proxy.serverSocket.setSockOpt(OptReuseAddr, true)
   proxy.serverSocket.bindAddr(proxy.listenPort, proxy.listenHost)
   proxy.serverSocket.listen()
@@ -406,6 +408,12 @@ when isMainModule:
   import throughput, os
   var proxy = newSocksServer()
   echo "SOCKS Proxy listens on: ", proxy.listenPort
+
+  ## Socks 4 has no authentication
+  # proxy.allowedSocksVersions = {SOCKS_V4}
+  # proxy.allowedAuthMethods = {NO_AUTHENTICATION_REQUIRED}
+
+  ## Socks 5 has authentication!
   proxy.allowedSocksVersions = {SOCKS_V4, SOCKS_V5}
   proxy.allowedAuthMethods = {USERNAME_PASSWORD, NO_AUTHENTICATION_REQUIRED}
 
