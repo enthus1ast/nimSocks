@@ -115,11 +115,16 @@ proc toBytes*(str: string): seq[byte] =
   for ch in str:
     result.add ch.byte
 
-proc toBytes*(arr: openarray[uint8]): seq[byte] =
+proc toBytes*[T](arr: openarray[T]): seq[byte] =
   ## for converting ip
   result = @[]
   for el in arr:
     result.add el.byte
+
+proc toString*[T](arr: openarray[T]): string=
+  ## for converting ip
+  for el in arr:
+    result.add el.char
 
 proc contains*[T](xx: set[T]; yy: seq[T]): bool =
   for elem in yy:
@@ -130,11 +135,6 @@ proc `in`*(bytesMethod: seq[byte], authMethods: set[AuthenticationMethod]): bool
   for byteMethod in bytesMethod:
     if byteMethod.AuthenticationMethod in authMethods: return true
   return false
-
-proc `$`*(obj: seq[byte]): string =
-  result = ""
-  for ch in obj:
-    result.add ch.char
 
 proc `$`*(obj: ResponseMessageSelection): string =
   result = ""
@@ -147,7 +147,7 @@ proc `$`*(obj: SocksResponse): string =
   result.add obj.rep.char
   result.add obj.rsv.char
   result.add obj.atyp.char
-  result.add $obj.bnd_addr
+  result.add obj.bnd_addr.toString()
   result.add obj.bnd_port.h.char
   result.add obj.bnd_port.l.char
 
@@ -157,7 +157,7 @@ proc `$`*(obj: SocksRequest): string =
   result.add obj.cmd.char
   result.add obj.rsv.char
   result.add obj.atyp.char
-  result.add $obj.dst_addr
+  result.add obj.dst_addr.toString()
   result.add obj.dst_port.h.char
   result.add obj.dst_port.l.char
 
@@ -170,15 +170,15 @@ proc `$`*(obj: RequestMessageSelection): string =
   result = ""
   result.add obj.version.char
   result.add obj.methodsLen.char
-  result.add $obj.methods
+  result.add obj.methods.toString()
 
 proc `$`*(obj: SocksUserPasswordRequest): string =
   result = ""
   result.add obj.authVersion.char
   result.add obj.ulen.char
-  result.add $obj.uname
+  result.add obj.uname.toString()
   result.add obj.plen.char
-  result.add $obj.passwd
+  result.add obj.passwd.toString()
 
 proc `$`*(obj: Socks4Request): string =
   result = ""
@@ -186,8 +186,8 @@ proc `$`*(obj: Socks4Request): string =
   result.add obj.cmd.char
   result.add obj.dst_port.h.char
   result.add obj.dst_port.l.char
-  result.add $obj.dst_ip
-  result.add $obj.userid
+  result.add obj.dst_ip.toString()
+  result.add obj.userid.toString()
   result.add NULL.char
 
 proc `$`*(obj: Socks4Response): string =
@@ -196,23 +196,17 @@ proc `$`*(obj: Socks4Response): string =
   result.add obj.cmd.char
   result.add obj.dst_port.h.char
   result.add obj.dst_port.l.char
-  result.add $obj.dst_ip
+  result.add obj.dst_ip.toString()
 
 proc toSeq*(str: string): seq[byte] =
   result = @[]
   for ch in str:
     result.add ch.byte
 
-# proc toSeq*(obj: set[AuthenticationMethod]): seq[byte] =
-#   result = @[]
-#   for ch in obj:
-#     result.add ch.byte
-
 proc toSeq*[T](obj: seq[byte], myType : typedesc[T] ): seq[T] =
   result = @[]
   for ch in obj:
     result.add ch.T
-
 
 proc toSeq*[T](obj: set[byte]): seq[T] =
   result = @[]
