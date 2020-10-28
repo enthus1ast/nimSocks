@@ -39,8 +39,6 @@ proc doSocksHandshake*(
   if not (await clientSocket.recvResponseMessageSelection(respMsgSel) ):
     return false # could not parse
 
-  echo respMsgSel.SocksVersionRef
-
   case respMsgSel.selectedMethod.AuthenticationMethod
   of NO_AUTHENTICATION_REQUIRED:
     return true

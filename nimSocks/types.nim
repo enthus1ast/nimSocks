@@ -70,14 +70,14 @@ type
     version*: SOCKS_VERSION
     cmd*: byte
     rsv*: byte
-    atyp*: byte
+    atyp*: ATYP
     dst_addr*: seq[byte]
     dst_port*: tuple[h: byte, l: byte]
   SocksResponse* = ref object
     version*: SOCKS_VERSION
     rep*: byte
     rsv*: byte
-    atyp*: byte
+    atyp*: ATYP
     bnd_addr*: seq[byte]
     bnd_port*: tuple[h: byte, l: byte]
   SocksUserPasswordRequest* = ref object
@@ -224,19 +224,19 @@ proc port*(t: tuple[h, l: byte]): Port =
 proc unPort*(p: Port): tuple[h, l: byte] =
   return ((p.int div 256).byte, (p.int mod 256).byte)
 
-proc parseHost(host: string): tuple[atyp: byte, data: seq[byte]] =
+proc parseHost(host: string): tuple[atyp: ATYP, data: seq[byte]] =
   var ipaddr: IpAddress
   try:
     ipaddr = host.parseIpAddress()
     case ipaddr.family
     of IPv4:
-      result.atyp = IP_V4_ADDRESS.byte
+      result.atyp = IP_V4_ADDRESS
       result.data = ipaddr.address_v4.toBytes()
     of IPv6:
-      result.atyp = IP_V6_ADDRESS.byte
+      result.atyp = IP_V6_ADDRESS
       result.data = ipaddr.address_v6.toBytes()
   except:
-      result.atyp = DOMAINNAME.byte
+      result.atyp = DOMAINNAME
       result.data = host.len.byte & host.toBytes()
 
 proc newSocksRequest*(
@@ -360,8 +360,7 @@ proc recvSocksRequest*(client:AsyncSocket, obj: SocksRequest): Future[bool] {.as
     obj.rsv = await client.recvByte
     if obj.rsv != RESERVED.byte: return false
 
-    obj.atyp = await client.recvByte
-    if not inEnum[ATYP](obj.atyp): return false
+    obj.atyp = (await client.recvByte).ATYP
   except:
     dbg getCurrentExceptionMsg()
     return false
@@ -384,8 +383,7 @@ proc recvSocksResponse*(client:AsyncSocket, obj: SocksResponse): Future[bool] {.
     obj.rsv = await client.recvByte
     if obj.rsv != RESERVED.byte: return false
 
-    obj.atyp = await client.recvByte
-    if not inEnum[ATYP](obj.atyp): return false
+    obj.atyp = (await client.recvByte).ATYP
 
     obj.bnd_addr = case obj.atyp.ATYP
       of IP_V4_ADDRESS: await client.recvBytes(IP_V4_ADDRESS_LEN)
