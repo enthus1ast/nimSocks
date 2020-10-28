@@ -126,6 +126,11 @@ proc toString*[T](arr: openarray[T]): string=
   for el in arr:
     result.add el.char
 
+proc `$`*(obj: seq[byte]): string = ## TODO usage of this should be cstring, for username password etc
+  result = ""
+  for ch in obj:
+    result.add ch.char
+
 proc contains*[T](xx: set[T]; yy: seq[T]): bool =
   for elem in yy:
     if elem in xx: return true

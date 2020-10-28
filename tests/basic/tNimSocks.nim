@@ -5,6 +5,8 @@ discard """
   target: "c cpp"
 """
 
+# TODO test socks 4 and 4a
+
 ## Tests if client and server compiles, and if the client can send data back and forth
 ## through the proxy, with its default configuration (the client can only do socks5 at the moment)
 
@@ -13,34 +15,44 @@ import ../../nimSocks/server
 import ../../nimSocks/client
 
 const
-  HOST = "127.0.0.1"
-  PROXY_PORT = 1080
-  SERVER_TEST_PORT = 7755
+  HOST* = "127.0.0.1"
+  PROXY_PORT* = 1081
+  SERVER_TEST_PORT* = 8908
+  USERNAME* = "hans"
+  PASSWORD* = "peter"
+  TST1* = "TEST"
+  TST2* = "TEST2"
 
-  TST1 = "TEST"
-  TST2 = "TEST2"
-
-proc tproxy() {.async.} =
-  var proxy = newSocksServer()
+proc tproxy*(pw = false): Future[SocksServer] {.async.} =
+  var proxy = newSocksServer(listenPort = PROXY_PORT.Port)
   proxy.allowedSocksVersions = {SOCKS_V4, SOCKS_V5}
-  proxy.allowedAuthMethods = {USERNAME_PASSWORD, NO_AUTHENTICATION_REQUIRED}
+  proxy.allowedAuthMethods = {NO_AUTHENTICATION_REQUIRED}
+  if pw:
+    proxy.allowedAuthMethods.incl USERNAME_PASSWORD
+    proxy.addUser(USERNAME, PASSWORD)
   proxy.shouldLogHost = false
   asyncCheck proxy.serve()
+  return proxy
 
-proc tclient(): Future[AsyncSocket] {.async.} =
+proc tclient*(pw = false): Future[AsyncSocket] {.async.} =
   result = await asyncnet.dial(HOST, PROXY_PORT.Port)
-  doAssert true == await result.doSocksHandshake()
+  if pw:
+    doAssert true == await result.doSocksHandshake(username = USERNAME, password = PASSWORD)
+  else:
+    doAssert true == await result.doSocksHandshake()
   doAssert true == await result.doSocksConnect(HOST, SERVER_TEST_PORT.Port)
 
-proc tserver(): Future[AsyncSocket] {.async.} =
+proc tserver*(): Future[AsyncSocket] {.async.} =
   result = newAsyncSocket()
+  result.setSockOpt(OptReuseAddr, true)
+  result.setSockOpt(OptReusePort, true)
   result.bindAddr(SERVER_TEST_PORT.Port, HOST)
   result.listen()
 
-proc test() {.async.} =
-  await tproxy()
+proc test(pw = false) {.async.} =
+  var proxy = await tproxy(pw)
   var server = await tserver()
-  var client = await tclient()
+  var client = await tclient(pw = pw)
   var clientSock = await server.accept()
 
   # Client ---> socks ---> server
@@ -52,4 +64,6 @@ proc test() {.async.} =
   doAssert TST2 == await client.recvLine()
   quit(0)
 
-waitFor test()
+when isMainModule:
+  waitFor test()
+  waitFor test(pw = true)
