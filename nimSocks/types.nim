@@ -68,7 +68,7 @@ type
   # Socks5
   SocksRequest* = ref object
     version*: SOCKS_VERSION
-    cmd*: byte
+    cmd*: SocksCmd
     rsv*: byte
     atyp*: ATYP
     dst_addr*: seq[byte]
@@ -106,7 +106,7 @@ type
     # socksDns*: seq[byte]
   Socks4Response* = ref object
     socks4ReplyVersion*: byte
-    cmd*: byte
+    rep*: REP4
     dst_port*: tuple[h: byte, l: byte]
     dst_ip*: seq[byte] # 4 byte array! # TODO
 
@@ -193,7 +193,7 @@ proc `$`*(obj: Socks4Request): string =
 proc `$`*(obj: Socks4Response): string =
   result = ""
   result.add obj.socks4ReplyVersion.char
-  result.add obj.cmd.char
+  result.add obj.rep.char
   result.add obj.dst_port.h.char
   result.add obj.dst_port.l.char
   result.add obj.dst_ip.toString()
@@ -246,7 +246,7 @@ proc newSocksRequest*(
   if address.len == 0: raise newException(ValueError, "address should not be empty")
   result = SocksRequest()
   result.version  = socksVersion
-  result.cmd = cmd.byte
+  result.cmd = cmd
   result.rsv = RESERVED.byte
   (result.atyp, result.dst_addr) = address.parseHost()
   result.dst_port = port.unPort()
@@ -353,9 +353,7 @@ proc inEnum[T](bt: byte): bool =
 proc recvSocksRequest*(client:AsyncSocket, obj: SocksRequest): Future[bool] {.async.} =
   try:
     obj.version = (await client.recvByte).SOCKS_VERSION
-
-    obj.cmd = await client.recvByte
-    if not inEnum[SocksCmd](obj.cmd): return false
+    obj.cmd = (await client.recvByte).SocksCmd
 
     obj.rsv = await client.recvByte
     if obj.rsv != RESERVED.byte: return false
@@ -462,7 +460,7 @@ proc recvSocks4Request*(client:AsyncSocket, obj: Socks4Request): Future[bool] {.
 proc newSocks4Response*(rep: REP4): Socks4Response =
   result = Socks4Response()
   result.socks4ReplyVersion = NULL
-  result.cmd = rep.byte
+  result.rep = rep
   result.dst_ip = @[0.byte,0.byte,0.byte,0.byte] # ignored
   result.dst_port = (0.byte,0.byte) # ignored
 
