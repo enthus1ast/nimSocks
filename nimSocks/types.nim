@@ -63,7 +63,7 @@ type
    ADDRESS_TYPE_NOT_SUPPORTED = 0x08.byte
    # to X'FF' unassigned = 0x09.byte
   SocksVersionRef* = ref object
-    socksVersion*: byte
+    socksVersion*: SOCKS_VERSION
 
   # Socks5
   SocksRequest* = ref object
@@ -98,7 +98,7 @@ type
     CONNECT = 0x01.byte
     BIND = 0x02.byte
   Socks4Request* = ref object
-    socksVersion*: byte # socksVersion*: SOCKS_VERSION
+    socksVersion*: SOCKS_VERSION # socksVersion*: SOCKS_VERSION
     cmd*: byte # cmd*: Socks4Cmd
     dst_port*: tuple[h: byte, l: byte]
     dst_ip*: seq[byte] # 4 byte array! # TODO
@@ -440,15 +440,14 @@ proc recvSocksUserPasswordResponse*(client:AsyncSocket, obj: SocksUserPasswordRe
 
 proc recvSocksVersion*(client:AsyncSocket, socksVersionRef: SocksVersionRef): Future[bool] {.async.} =
   try:
-    socksVersionRef.socksVersion = await client.recvByte
+    socksVersionRef.socksVersion = (await client.recvByte).SOCKS_VERSION
   except:
     dbg "recvSocksVersion failed"
     return false
-  if not inEnum[SOCKS_VERSION](socksVersionRef.socksVersion): return false
   return true
 
 proc recvSocks4Request*(client:AsyncSocket, obj: Socks4Request): Future[bool] {.async.} =
-  obj.socksVersion = SOCKS_V4.byte
+  obj.socksVersion = SOCKS_V4
   try:
     obj.cmd = await client.recvByte
     if not inEnum[SocksCmd](obj.cmd): return false
