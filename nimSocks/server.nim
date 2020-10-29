@@ -364,6 +364,9 @@ proc processClient(proxy: SocksServer, client: AsyncSocket): Future[void] {.asyn
 
 proc serve*(proxy: SocksServer): Future[void] {.async.} =
   proxy.serverSocket.setSockOpt(OptReusePort, true)
+  # proxy.serverSocket.getFd.setSockOptInt(SOL_SOCKET.cint, )
+  proxy.serverSocket.setSockOpt(OptNoDelay, true) # TODO test if this is good
+  # proxy.serverSocket.setSockOpt(TCP_QUICKACK, true)
   proxy.serverSocket.bindAddr(proxy.listenPort, proxy.listenHost)
   proxy.serverSocket.listen()
   var
@@ -382,6 +385,7 @@ proc serve*(proxy: SocksServer): Future[void] {.async.} =
       stalling = true
       continue
 
+    client.setSockOpt(OptNoDelay, true) # TODO test if this is good
     client.setSockOpt(OptReuseAddr, true)
     asyncCheck proxy.processClient(client)
 
