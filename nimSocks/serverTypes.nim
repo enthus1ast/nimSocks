@@ -24,7 +24,8 @@ type SocksServer* = ref object
   allowedAuthMethods*: set[AuthenticationMethod]
   allowedSocksCmds*: set[SocksCmd]
   allowedSocksVersions*: set[SOCKS_VERSION]
-  transferedBytes*: int
+  prohibitPrivate*: bool
+  # transferedBytes*: int
   stallingTimeout*: int
   byteCounter*: ByteCounter
   # tcpBindPortRange: range[int] # TODO not implemented yet

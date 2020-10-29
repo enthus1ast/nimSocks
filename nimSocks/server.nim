@@ -14,6 +14,7 @@ import asyncdispatch, asyncnet, nativesockets, tables, dbg, intsets
 import reverseDomainNotation
 import pump
 import byteCounter
+import isPrivateIp
 
 import serverTypes
 export serverTypes
@@ -35,7 +36,7 @@ proc newSocksServer*(
   result.allowedAuthMethods = allowedAuthMethods
   result.allowedSocksCmds = {SocksCmd.CONNECT}
   result.allowedSocksVersions = allowedSocksVersions
-  result.transferedBytes = 0
+  # result.transferedBytes = 0
   result.stallingTimeout = STALLING_TIMEOUT
   result.byteCounter = newByteCounter()
 
@@ -46,6 +47,8 @@ proc isWhitelisted(proxy: SocksServer, host: string): bool =
   return proxy.whitelistHost.isListed(host) or proxy.whitelistHostFancy.isListed(host)
 
 proc isListed(proxy: SocksServer, host: string): bool =
+  if proxy.prohibitPrivate:
+    if host.isPrivate(): return true
   if proxy.whitelistHost.len == 0 and proxy.whitelistHostFancy.len == 0:
     if proxy.isBlacklisted(host):
       echo "Blacklisted host:", host
@@ -116,6 +119,7 @@ proc handleSocks5Connect(
   dbg "--->: ", host.reverseNotation()
   host = proxy.getStaticRewrite(host)
   if proxy.isListed(host):
+      dbg "CONNECTION_NOT_ALLOWED_BY_RULESET"
       var socksResp = newSocksResponse(socksReq, CONNECTION_NOT_ALLOWED_BY_RULESET)
       await client.send($socksResp)
       return (false, nil)
@@ -250,8 +254,8 @@ proc processSocks5(proxy: SocksServer, client: AsyncSocket): Future[bool] {.asyn
   await client.send($socksResp)
 
   # From here on we start relaying data
-  asyncCheck proxy.pump(remoteSocket, client, downstream , socksReq.dst_addr, socksReq.atyp.ATYP)
-  asyncCheck proxy.pump(client, remoteSocket, upstream   , socksReq.dst_addr, socksReq.atyp.ATYP)
+  asyncCheck pump(proxy.byteCounter, remoteSocket, client, downstream , socksReq.dst_addr, socksReq.atyp.ATYP)
+  asyncCheck pump(proxy.byteCounter, client, remoteSocket, upstream   , socksReq.dst_addr, socksReq.atyp.ATYP)
   return true
 
 
@@ -332,8 +336,8 @@ proc processSocks4(proxy: SocksServer, client: AsyncSocket): Future[bool] {.asyn
   await client.send($socksResp)
 
   # From here on we start relaying data
-  asyncCheck proxy.pump(remoteSocket, client, downstream , socks4Request.dst_ip, ATYP.IP_V4_ADDRESS)
-  asyncCheck proxy.pump(client, remoteSocket, upstream   , socks4Request.dst_ip, ATYP.IP_V4_ADDRESS)
+  asyncCheck pump(proxy.byteCounter, remoteSocket, client, downstream , socks4Request.dst_ip, ATYP.IP_V4_ADDRESS)
+  asyncCheck pump(proxy.byteCounter, client, remoteSocket, upstream   , socks4Request.dst_ip, ATYP.IP_V4_ADDRESS)
   return true
 
 
@@ -411,6 +415,9 @@ when isMainModule:
   ## Socks 5 has authentication!
   proxy.allowedSocksVersions = {SOCKS_V4, SOCKS_V5}
   proxy.allowedAuthMethods = {USERNAME_PASSWORD, NO_AUTHENTICATION_REQUIRED}
+
+  ## Prohibit proxy to reach private ips
+  proxy.prohibitPrivate = true
 
   ## If the proxy server should log hosts
   proxy.shouldLogHost = false

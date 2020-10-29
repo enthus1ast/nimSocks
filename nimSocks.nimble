@@ -1,6 +1,6 @@
 # Package
 
-version       = "0.1.4"
+version       = "0.1.5"
 author        = "enthus1ast"
 description   = "SOCKS server and client"
 license       = "MIT"
@@ -10,3 +10,4 @@ license       = "MIT"
 requires "nim >= 0.17.3"
 requires "nimSHA2"
 requires "dbg"
+requires "https://github.com/enthus1ast/nimIsPrivateIp.git"

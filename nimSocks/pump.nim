@@ -1,7 +1,7 @@
 import serverTypes, asyncdispatch, dbg
 from ressourceInfo import Ressource
 
-proc pump*(proxy: SocksServer, s1, s2: AsyncSocket, direction: Direction, ressource: seq[byte], atyp: ATYP): Future[void] {.async.} =
+proc pump*(byteCounter: ByteCounter, s1, s2: AsyncSocket, direction: Direction, ressource: seq[byte], atyp: ATYP): Future[void] {.async.} =
   var buffer = newStringOfCap(SIZE)
   # var haveExbyte = false
   var exbyte: string # for avoiding sending 1 byte packages
@@ -40,13 +40,13 @@ proc pump*(proxy: SocksServer, s1, s2: AsyncSocket, direction: Direction, ressou
       break
     else:
       ## Throughtput monitoring
-      proxy.byteCounter.count(Ressource(kind: atyp, value: $ressource), direction, buffer.len)
+      byteCounter.count(Ressource(kind: atyp, value: $ressource), direction, buffer.len)
 
-      try:
-        proxy.transferedBytes.inc(buffer.len)
-      except:
-        dbg 4, getCurrentExceptionMsg()
-        proxy.transferedBytes = 0 # reset if overflow
+      # try:
+      #   proxy.transferedBytes.inc(buffer.len)
+      # except:
+      #   dbg 4, getCurrentExceptionMsg()
+      #   proxy.transferedBytes = 0 # reset if overflow
 
       try:
         # echo buffer.len
