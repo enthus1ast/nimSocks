@@ -10,13 +10,11 @@
 
 import tables, strutils, hashes
 from types import ATYP
+import ressourceInfo
 
 type
   Direction* = enum
     upstream, downstream
-  Ressource* = object
-    kind*: ATYP
-    value*: string
   RessourceInfo* = tuple[up, down: int]
   ByteCounter* = ref object
     globalUpBytes*: int   # to the remote server
@@ -52,8 +50,6 @@ proc `$`*(byteCounter: ByteCounter): string =
   result.add "globalUpBytes: " & $byteCounter.globalUpBytes & "\p"
   result.add "globalDownBytes: " & $byteCounter.globalDownBytes & "\p"
   result.add "globalTransferedBytes: " & $byteCounter.globalTransferedBytes() & "\p"
-  # result.add "globalUpBytes: ", byteCounter.globalUpBytes , "\p"
-  # result.add "globalUpBytes: ", byteCounter.globalUpBytes , "\p"
   result.add "^".repeat(30) & "\p"
 
 proc ressourceInfo*(byteCounter: ByteCounter, ressource: Ressource): RessourceInfo =
@@ -69,11 +65,6 @@ proc dumpThroughput*(byteCounter: ByteCounter, perSeconds = 10) =
 
   str.add "throughput ( " & $perSeconds & " seconds ):\p"
   for k, v in byteCounter.ressourceTableThrougput.pairs():
-    # case k[1]
-    # of upstream:
-    #   str.add " <== "
-    # of downstream:
-    #   str.add " ==> "
     str.add "$#\t$#/s \t$# \p" % [($k[1]).align(10), (v.div perSeconds).formatSize.align(8), $k[0]]#   "\t -", k[0], " =" , k[1] , "=> " , v.formatSize
   echo str
   byteCounter.ressourceTableThrougput.clear()

@@ -1,5 +1,5 @@
 import serverTypes, asyncdispatch, dbg
-from byteCounter import Ressource
+from ressourceInfo import Ressource
 
 proc pump*(proxy: SocksServer, s1, s2: AsyncSocket, direction: Direction, ressource: seq[byte], atyp: ATYP): Future[void] {.async.} =
   var buffer = newStringOfCap(SIZE)
