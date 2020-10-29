@@ -12,9 +12,12 @@
 import net, asyncnet, asyncdispatch, strutils
 import dbg
 
+type
+  RESERVED =  distinct byte
+
 const
   DEFAULT_PORT* = 1080
-  RESERVED = 0x00.byte
+  RESERVED_VALUE: RESERVED = 0x00.RESERVED
   IP_V4_ADDRESS_LEN = 4
   IP_V6_ADDRESS_LEN = 16
   NULL* = 0x00.byte
@@ -69,26 +72,26 @@ type
   SocksRequest* = ref object
     version*: SOCKS_VERSION
     cmd*: SocksCmd
-    rsv*: byte
+    rsv*: RESERVED
     atyp*: ATYP
     dst_addr*: seq[byte]
     dst_port*: tuple[h: byte, l: byte]
   SocksResponse* = ref object
     version*: SOCKS_VERSION
-    rep*: byte
-    rsv*: byte
+    rep*: REP
+    rsv*: RESERVED
     atyp*: ATYP
     bnd_addr*: seq[byte]
     bnd_port*: tuple[h: byte, l: byte]
   SocksUserPasswordRequest* = ref object
-    authVersion*: byte
+    authVersion*: AuthVersion
     ulen*: byte
     uname*: seq[byte]
     plen*: byte
     passwd*: seq[byte]
   SocksUserPasswordResponse* = ref object
-   authVersion*: byte
-   status*: byte
+   authVersion*: AuthVersion
+   status*: UserPasswordStatus
 
   ## Socks4 & Socks4a
   REP4* = enum
@@ -98,12 +101,11 @@ type
     CONNECT = 0x01.byte
     BIND = 0x02.byte
   Socks4Request* = ref object
-    socksVersion*: SOCKS_VERSION # socksVersion*: SOCKS_VERSION
-    cmd*: byte # cmd*: Socks4Cmd
+    socksVersion*: SOCKS_VERSION
+    cmd*: Socks4Cmd
     dst_port*: tuple[h: byte, l: byte]
     dst_ip*: seq[byte] # 4 byte array! # TODO
     userid*: seq[byte] # null terminated but not captured!
-    # socksDns*: seq[byte]
   Socks4Response* = ref object
     socks4ReplyVersion*: byte
     rep*: REP4
@@ -252,15 +254,15 @@ proc newSocksRequest*(
   result = SocksRequest()
   result.version  = socksVersion
   result.cmd = cmd
-  result.rsv = RESERVED.byte
+  result.rsv = RESERVED_VALUE
   (result.atyp, result.dst_addr) = address.parseHost()
   result.dst_port = port.unPort()
 
 proc newSocksResponse*(socksRequest: SocksRequest, rep: REP): SocksResponse =
   result = SocksResponse()
   result.version = socksRequest.version
-  result.rep = rep.byte
-  result.rsv = RESERVED.byte
+  result.rep = rep
+  result.rsv = RESERVED_VALUE
   result.atyp = socksRequest.atyp
   case result.atyp.ATYP
   of IP_V4_ADDRESS, IP_V6_ADDRESS:
@@ -282,7 +284,7 @@ proc newResponseMessageSelection*(version: SOCKS_VERSION, selectedMethod: Authen
 
 proc newSocksUserPasswordRequest*(username: string, password: string): SocksUserPasswordRequest =
   result = SocksUserPasswordRequest()
-  result.authVersion = AuthVersionV1.byte
+  result.authVersion = AuthVersionV1
   result.ulen = username.len.byte
   result.uname = username.toBytes()
   result.plen =  password.len.byte
@@ -324,8 +326,8 @@ proc recvNullTerminated*(client: AsyncSocket): Future[seq[byte]] {.async.} =
 
 proc recvSocksUserPasswordRequest*(client:AsyncSocket, obj: SocksUserPasswordRequest): Future[bool] {.async.} =
   try:
-    obj.authVersion = await client.recvByte
-    if obj.authVersion != AuthVersionV1.byte: return false
+    obj.authVersion = (await client.recvByte).AuthVersion
+    if obj.authVersion != AuthVersionV1: return false
 
     obj.ulen = await client.recvByte
     if obj.ulen == 0x00: return false
@@ -360,8 +362,8 @@ proc recvSocksRequest*(client:AsyncSocket, obj: SocksRequest): Future[bool] {.as
     obj.version = (await client.recvByte).SOCKS_VERSION
     obj.cmd = (await client.recvByte).SocksCmd
 
-    obj.rsv = await client.recvByte
-    if obj.rsv != RESERVED.byte: return false
+    obj.rsv = (await client.recvByte).RESERVED
+    if obj.rsv.byte != RESERVED_VALUE.byte: return false
 
     obj.atyp = (await client.recvByte).ATYP
   except:
@@ -379,15 +381,11 @@ proc recvSocksRequest*(client:AsyncSocket, obj: SocksRequest): Future[bool] {.as
 proc recvSocksResponse*(client:AsyncSocket, obj: SocksResponse): Future[bool] {.async.} =
   try:
     obj.version = (await client.recvByte).SOCKS_VERSION
-
-    obj.rep = await client.recvByte
-    if not inEnum[REP](obj.rep): return false
-
-    obj.rsv = await client.recvByte
-    if obj.rsv != RESERVED.byte: return false
+    obj.rep = (await client.recvByte).REP
+    obj.rsv = (await client.recvByte).RESERVED
+    if obj.rsv.byte != RESERVED_VALUE.byte: return false
 
     obj.atyp = (await client.recvByte).ATYP
-
     obj.bnd_addr = case obj.atyp.ATYP
       of IP_V4_ADDRESS: await client.recvBytes(IP_V4_ADDRESS_LEN)
       of DOMAINNAME: await client.recvBytes((await client.recvByte).int)
@@ -432,13 +430,12 @@ proc recvResponseMessageSelection*(client:AsyncSocket, obj: ResponseMessageSelec
 
 proc recvSocksUserPasswordResponse*(client:AsyncSocket, obj: SocksUserPasswordResponse): Future[bool] {.async.} =
   try:
-    obj.authVersion = await client.recvByte
+    obj.authVersion = (await client.recvByte).AuthVersion
+    if obj.authVersion != AuthVersionV1: return false
+    obj.status = (await client.recvByte).UserPasswordStatus
   except:
     dbg "recvSocksUserPasswordResponse failed"
     return false
-  if obj.authVersion != AuthVersionV1.byte: return false
-  obj.status = await client.recvByte
-  if not inEnum[UserPasswordStatus](obj.status): return false
   return true
 
 proc recvSocksVersion*(client:AsyncSocket, socksVersionRef: SocksVersionRef): Future[bool] {.async.} =
@@ -452,8 +449,7 @@ proc recvSocksVersion*(client:AsyncSocket, socksVersionRef: SocksVersionRef): Fu
 proc recvSocks4Request*(client:AsyncSocket, obj: Socks4Request): Future[bool] {.async.} =
   obj.socksVersion = SOCKS_V4
   try:
-    obj.cmd = await client.recvByte
-    if not inEnum[SocksCmd](obj.cmd): return false
+    obj.cmd = (await client.recvByte).Socks4Cmd
     obj.dst_port = (await client.recvByte, await client.recvByte)
     obj.dst_ip = await client.recvBytes(IP_V4_ADDRESS_LEN)
     obj.userid = await client.recvNullTerminated()

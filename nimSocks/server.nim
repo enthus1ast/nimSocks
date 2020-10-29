@@ -167,13 +167,13 @@ proc processSocks5(proxy: SocksServer, client: AsyncSocket): Future[bool] {.asyn
       return
 
     var socksUserPasswordResp = SocksUserPasswordResponse()
-    socksUserPasswordResp.authVersion = AuthVersionV1.byte
+    socksUserPasswordResp.authVersion = AuthVersionV1
     if proxy.authenticate($socksUserPasswordReq.uname, $socksUserPasswordReq.passwd):
-      socksUserPasswordResp.status = UserPasswordStatus.SUCCEEDED.byte
+      socksUserPasswordResp.status = UserPasswordStatus.SUCCEEDED
       dbg "Sending good: ", repr($socksUserPasswordResp)
       await client.send($socksUserPasswordResp)
     else:
-      socksUserPasswordResp.status = UserPasswordStatus.FAILED.byte
+      socksUserPasswordResp.status = UserPasswordStatus.FAILED
       dbg "Sending bad: ", repr($socksUserPasswordResp)
       await client.send($socksUserPasswordResp)
       return
