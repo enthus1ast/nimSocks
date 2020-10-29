@@ -364,7 +364,6 @@ proc processClient(proxy: SocksServer, client: AsyncSocket): Future[void] {.asyn
 
 proc serve*(proxy: SocksServer): Future[void] {.async.} =
   proxy.serverSocket.setSockOpt(OptReusePort, true)
-  # proxy.serverSocket.setSockOpt(OptReuseAddr, true)
   proxy.serverSocket.bindAddr(proxy.listenPort, proxy.listenHost)
   proxy.serverSocket.listen()
   var
