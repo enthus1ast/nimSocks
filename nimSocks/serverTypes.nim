@@ -5,9 +5,7 @@ const
               ## but since we peek on the sockets,
               ## this buffer gets not filled completely
               ## anyway...
-  # SIZE = 6291456
   STALLING_TIMEOUT* = 250 # when full: wait then try again
-  # ENABLE_MONITORING = true # enables the throughput monitoring
 type SocksServer* = ref object
   listenPort*: Port
   listenHost*: string
@@ -25,7 +23,5 @@ type SocksServer* = ref object
   allowedSocksCmds*: set[SocksCmd]
   allowedSocksVersions*: set[SOCKS_VERSION]
   prohibitPrivate*: bool
-  # transferedBytes*: int
   stallingTimeout*: int
   byteCounter*: ByteCounter
-  # tcpBindPortRange: range[int] # TODO not implemented yet

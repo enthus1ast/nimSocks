@@ -3,7 +3,6 @@ from ressourceInfo import Ressource
 
 proc pump*(byteCounter: ByteCounter, s1, s2: AsyncSocket, direction: Direction, ressource: seq[byte], atyp: ATYP): Future[void] {.async.} =
   var buffer = newStringOfCap(SIZE)
-  # var haveExbyte = false
   var exbyte: string # for avoiding sending 1 byte packages
   while not (s1.isClosed() and s2.isClosed()):
     buffer.setLen 0
@@ -41,12 +40,6 @@ proc pump*(byteCounter: ByteCounter, s1, s2: AsyncSocket, direction: Direction, 
     else:
       ## Throughtput monitoring
       byteCounter.count(Ressource(kind: atyp, value: $ressource), direction, buffer.len)
-
-      # try:
-      #   proxy.transferedBytes.inc(buffer.len)
-      # except:
-      #   dbg 4, getCurrentExceptionMsg()
-      #   proxy.transferedBytes = 0 # reset if overflow
 
       try:
         # echo buffer.len

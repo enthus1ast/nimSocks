@@ -36,7 +36,6 @@ proc newSocksServer*(
   result.allowedAuthMethods = allowedAuthMethods
   result.allowedSocksCmds = {SocksCmd.CONNECT}
   result.allowedSocksVersions = allowedSocksVersions
-  # result.transferedBytes = 0
   result.stallingTimeout = STALLING_TIMEOUT
   result.byteCounter = newByteCounter()
 
@@ -130,9 +129,6 @@ proc handleSocks5Connect(
   var connectSuccess = true
   try:
     remoteSocket =  await asyncnet.dial(host, socksReq.dst_port.port())
-    # should load data but not deliver to client (e.g. some anoying ads)
-    # if host.contains("adition.com"):
-    #   connectSuccess = false
   except:
     connectSuccess = false
   if not connectSuccess:
