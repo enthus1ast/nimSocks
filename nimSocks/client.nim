@@ -11,19 +11,6 @@
 
 import net, asyncdispatch, asyncnet, nativesockets
 import types
-import dbg
-
-# type SocksClient = object
-#   clientSocket: AsyncSocket
-#   allowedAuthMethods: set[AuthenticationMethod]
-
-# proc newSocksClient(
-#   clientSocket: AsyncSocket,
-#   allowedAuthMethods: set[AuthenticationMethod] = {USERNAME_PASSWORD}
-# ): Future[SocksClient] {.async.} =
-#   result = SocksClient()
-#   result.clientSocket = clientSocket
-#   result.allowedAuthMethods = allowedAuthMethods
 
 proc doSocksHandshake*(
   clientSocket: AsyncSocket,
@@ -91,8 +78,8 @@ when isMainModule:
       )
 
   # instruct the proxy to connect to target host (by tcp)
-  # assert true == waitFor sock.doSocksConnect("example.org", Port 80)
-  assert true == waitFor sock.doSocksConnect("127.0.0.1", Port 8000)
+  assert true == waitFor sock.doSocksConnect("example.org", Port 80)
+  # assert true == waitFor sock.doSocksConnect("127.0.0.1", Port 8000)
 
   echo "Send http..."
 
