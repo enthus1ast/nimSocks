@@ -10,7 +10,7 @@
 #
 ## SOCKS4/4a/5 proxy server
 
-import asyncdispatch, asyncnet, nativesockets, tables, dbg, intsets
+import asyncdispatch, asyncnet, nativesockets, tables, dbg
 import reverseDomainNotation
 import pump
 import byteCounter
@@ -110,7 +110,7 @@ proc handleSocks5Connect(
   socksReq: SocksRequest
 ): Future[(bool, AsyncSocket)] {.async.} =
   var
-    host = socksReq.dst_addr.parseDestAddress(socksReq.atyp.ATYP)
+    host = socksReq.dst_addr.parseDestAddress(socksReq.atyp)
     remoteSocket: AsyncSocket
 
   dbg "host: ", host
@@ -214,7 +214,7 @@ proc processSocks5(proxy: SocksServer, client: AsyncSocket): Future[bool] {.asyn
   dbg "Handling command: succeed"
 
   var
-    socksResp = newSocksResponse(socksReq, SUCCEEDED)
+    socksResp = newSocksResponse(socksReq, REP.SUCCEEDED)
     (hst, prt) = remoteSocket.getFd.getLocalAddr(Domain.AF_INET)
 
   ## BUG

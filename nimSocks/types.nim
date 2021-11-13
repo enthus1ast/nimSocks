@@ -8,9 +8,9 @@
 #    See the file "LICENSE", included in this
 #    distribution, for details about the copyright.
 ## SOCKS4/4a/5 type definitions
-
+# {.push raises: [Defect].}
 import net, asyncnet, asyncdispatch, strutils
-import dbg
+import dbg, strformat, std/enumutils
 
 type
   RESERVED =  distinct byte
@@ -23,7 +23,7 @@ const
   NULL* = 0x00.byte
 
 type
-  SOCKS_VERSION* = enum
+  SOCKS_VERSION* {.pure.} = enum
     SOCKS_V4 = 0x04.byte # same as 4a
     SOCKS_V5 = 0x05.byte
   RequestMessageSelection* = ref object
@@ -33,7 +33,7 @@ type
   ResponseMessageSelection* = ref object
     version*: SOCKS_VERSION
     selectedMethod*: AuthenticationMethod
-  AuthenticationMethod* = enum
+  AuthenticationMethod* {.pure.} = enum
     NO_AUTHENTICATION_REQUIRED = 0x00.byte
     GSSAPI = 0x01.byte
     USERNAME_PASSWORD = 0x02.byte
@@ -41,7 +41,7 @@ type
     # to X'FE' RESERVED FOR PRIVATE METHODS = 0x80
     # RESERVED = 0x03.byte .. 0xFE.byte ## <-- would be nice to have
     NO_ACCEPTABLE_METHODS = 0xFF.byte
-  AuthVersion* = enum
+  AuthVersion* {.pure.} = enum
     AuthVersionV1 = 0x01.byte
   UserPasswordStatus* {.pure.} = enum
     SUCCEEDED = 0x00
@@ -50,11 +50,11 @@ type
     CONNECT = 0x01.byte
     BIND = 0x02.byte
     UDP_ASSOCIATE = 0x03.byte
-  ATYP* = enum
+  ATYP* {.pure.} = enum
     IP_V4_ADDRESS = 0x01.byte
     DOMAINNAME = 0x03.byte
     IP_V6_ADDRESS = 0x04.byte
-  REP* = enum
+  REP* {.pure.} = enum
    SUCCEEDED = 0x00.byte
    GENERAL_SOCKS_SERVER_FAILURE = 0x01.byte
    CONNECTION_NOT_ALLOWED_BY_RULESET = 0x02.byte
@@ -94,7 +94,7 @@ type
    status*: UserPasswordStatus
 
   ## Socks4 & Socks4a
-  REP4* = enum
+  REP4* {.pure.} = enum
     REQUEST_GRANTED = 0x5A.byte
     REQUEST_REJECTED_OR_FAILED = 0x05B.byte
   Socks4Cmd* {.pure.} = enum
@@ -111,6 +111,11 @@ type
     rep*: REP4
     dst_port*: tuple[h: byte, l: byte]
     dst_ip*: seq[byte] # 4 byte array! # TODO
+
+proc toEnum*[T](val: byte): T {.raises: ValueError.} =
+  for tval in T:
+    if tval.byte == val: return T(val)
+  raise newException(ValueError, fmt"'{val}' is not a valid enum of '{$T}'")
 
 proc toBytes*(str: string): seq[byte] =
   result = @[]
@@ -359,13 +364,13 @@ proc inEnum[T](bt: byte): bool =
 
 proc recvSocksRequest*(client:AsyncSocket, obj: SocksRequest): Future[bool] {.async.} =
   try:
-    obj.version = (await client.recvByte).SOCKS_VERSION
-    obj.cmd = (await client.recvByte).SocksCmd
+    obj.version = toEnum[SOCKS_VERSION](await client.recvByte)
+    obj.cmd = toEnum[SocksCmd](await client.recvByte)
 
     obj.rsv = (await client.recvByte).RESERVED
     if obj.rsv.byte != RESERVED_VALUE.byte: return false
 
-    obj.atyp = (await client.recvByte).ATYP
+    obj.atyp = toEnum[ATYP](await client.recvByte)
   except:
     dbg getCurrentExceptionMsg()
     return false
@@ -380,12 +385,12 @@ proc recvSocksRequest*(client:AsyncSocket, obj: SocksRequest): Future[bool] {.as
 
 proc recvSocksResponse*(client:AsyncSocket, obj: SocksResponse): Future[bool] {.async.} =
   try:
-    obj.version = (await client.recvByte).SOCKS_VERSION
-    obj.rep = (await client.recvByte).REP
+    obj.version = toEnum[SOCKS_VERSION](await client.recvByte)
+    obj.rep = toEnum[REP](await client.recvByte)
     obj.rsv = (await client.recvByte).RESERVED
     if obj.rsv.byte != RESERVED_VALUE.byte: return false
 
-    obj.atyp = (await client.recvByte).ATYP
+    obj.atyp = toEnum[ATYP](await client.recvByte)
     obj.bnd_addr = case obj.atyp.ATYP
       of IP_V4_ADDRESS: await client.recvBytes(IP_V4_ADDRESS_LEN)
       of DOMAINNAME: await client.recvBytes((await client.recvByte).int)
@@ -416,12 +421,12 @@ proc recvRequestMessageSelection*(client:AsyncSocket, obj: RequestMessageSelecti
 
 proc recvResponseMessageSelection*(client:AsyncSocket, obj: ResponseMessageSelection): Future[bool] {.async.} =
   try:
-    obj.version = (await client.recvByte).SOCKS_VERSION
+    obj.version = toEnum[SOCKS_VERSION](await client.recvByte)
   except:
     return false
 
   try:
-    obj.selectedMethod = (await client.recvByte).AuthenticationMethod
+    obj.selectedMethod = toEnum[AuthenticationMethod](await client.recvByte)
   except:
     return false
 
@@ -430,9 +435,9 @@ proc recvResponseMessageSelection*(client:AsyncSocket, obj: ResponseMessageSelec
 
 proc recvSocksUserPasswordResponse*(client:AsyncSocket, obj: SocksUserPasswordResponse): Future[bool] {.async.} =
   try:
-    obj.authVersion = (await client.recvByte).AuthVersion
+    obj.authVersion = toEnum[AuthVersion](await client.recvByte)
     if obj.authVersion != AuthVersionV1: return false
-    obj.status = (await client.recvByte).UserPasswordStatus
+    obj.status = toEnum[UserPasswordStatus](await client.recvByte)
   except:
     dbg "recvSocksUserPasswordResponse failed"
     return false
@@ -440,7 +445,7 @@ proc recvSocksUserPasswordResponse*(client:AsyncSocket, obj: SocksUserPasswordRe
 
 proc recvSocksVersion*(client:AsyncSocket, socksVersionRef: SocksVersionRef): Future[bool] {.async.} =
   try:
-    socksVersionRef.socksVersion = (await client.recvByte).SOCKS_VERSION
+    socksVersionRef.socksVersion = toEnum[SOCKS_VERSION](await client.recvByte)
   except:
     dbg "recvSocksVersion failed"
     return false
@@ -449,7 +454,7 @@ proc recvSocksVersion*(client:AsyncSocket, socksVersionRef: SocksVersionRef): Fu
 proc recvSocks4Request*(client:AsyncSocket, obj: Socks4Request): Future[bool] {.async.} =
   obj.socksVersion = SOCKS_V4
   try:
-    obj.cmd = (await client.recvByte).Socks4Cmd
+    obj.cmd = toEnum[Socks4Cmd](await client.recvByte)
     obj.dst_port = (await client.recvByte, await client.recvByte)
     obj.dst_ip = await client.recvBytes(IP_V4_ADDRESS_LEN)
     obj.userid = await client.recvNullTerminated()
