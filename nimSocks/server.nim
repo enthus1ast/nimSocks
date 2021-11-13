@@ -215,38 +215,6 @@ proc processSocks5(proxy: SocksServer, client: AsyncSocket): Future[bool] {.asyn
 
   var
     socksResp = newSocksResponse(socksReq, REP.SUCCEEDED)
-    (hst, prt) = remoteSocket.getFd.getLocalAddr(Domain.AF_INET)
-
-  ## BUG
-  # the bind address is wrong!!
-  #
-  # https://tools.ietf.org/html/rfc1928
-  # 5.  Addressing
-
-  #  In an address field (DST.ADDR, BND.ADDR), the ATYP field specifies
-  #  the type of address contained within the field:
-
-  #         o  X'01'
-
-  #  the address is a version-4 IP address, with a length of 4 octets
-
-  #         o  X'03'
-
-  #  the address field contains a fully-qualified domain name.  The first
-  #  octet of the address field contains the number of octets of name that
-  #  follow, there is no terminating NUL octet.
-
-  #         o  X'04'
-  # socksResp.bnd_addr = @[hst.len.byte]
-  # socksResp.bnd_addr &= hst.toBytes()
-  # socksResp.bnd_port = prt.unPort
-  # echo "=1==============="
-  # echo socksResp
-  # echo "=2==============="
-  # echo repr socksResp
-  # echo "=3==============="
-  # echo $socksResp
-  # echo "================"
   await client.send($socksResp)
 
   # From here on we start relaying data
@@ -339,27 +307,33 @@ proc processSocks4(proxy: SocksServer, client: AsyncSocket): Future[bool] {.asyn
 
 proc processClient(proxy: SocksServer, client: AsyncSocket): Future[void] {.async.} =
   # Check for socks version.
-  var socksVersionRef = SocksVersionRef()
-  if (await client.recvSocksVersion(socksVersionRef)) == false:
-    dbg "unknown socks version: ", socksVersionRef.socksVersion
-    client.close()
-    return
+  try:
+    var socksVersionRef = SocksVersionRef()
+    if (await client.recvSocksVersion(socksVersionRef)) == false:
+      dbg "unknown socks version: ", socksVersionRef.socksVersion
+      client.close()
+      return
 
-  var stayOpen: bool = false
-  if socksVersionRef.socksVersion.SOCKS_VERSION notin proxy.allowedSocksVersions:
-    dbg "socket version not allowed"
-    client.close()
-    return
+    var stayOpen: bool = false
+    if socksVersionRef.socksVersion.SOCKS_VERSION notin proxy.allowedSocksVersions:
+      dbg "socket version not allowed"
+      client.close()
+      return
 
-  case socksVersionRef.socksVersion.SOCKS_VERSION
-  of SOCKS_V4:
-    stayOpen = await proxy.processSocks4(client)
-  of SOCKS_V5:
-    stayOpen = await proxy.processSocks5(client)
+    case socksVersionRef.socksVersion.SOCKS_VERSION
+    of SOCKS_V4:
+      stayOpen = await proxy.processSocks4(client)
+    of SOCKS_V5:
+      stayOpen = await proxy.processSocks5(client)
 
-  if not client.isClosed and not stayOpen:
-    client.close()
-
+    if not client.isClosed and not stayOpen:
+      client.close()
+  except:
+    echo "processClient exception:"
+    echo getCurrentExceptionMsg()
+    if not client.isClosed:
+      client.close()
+      return
 
 
 proc serve*(proxy: SocksServer): Future[void] {.async.} =
@@ -401,7 +375,7 @@ when not defined release:
 
 when isMainModule:
   import throughput, os
-  var proxy = newSocksServer()
+  var proxy = newSocksServer(listenPort = 1080.Port)
   echo "SOCKS Proxy listens on: ", proxy.listenPort
 
   ## Socks 4 has no authentication
