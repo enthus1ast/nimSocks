@@ -9,8 +9,10 @@
 #    distribution, for details about the copyright.
 ## SOCKS4/4a/5 proxy client library
 
-import net, asyncdispatch, asyncnet, nativesockets
+import nativesockets
 import types
+when asyncBackend != "chronos":
+  import net, asyncnet, asyncdispatch
 
 proc doSocksHandshake*(
   clientSocket: AsyncSocket,

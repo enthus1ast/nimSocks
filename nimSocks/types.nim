@@ -11,9 +11,10 @@
 # {.push raises: [Defect].}
 import strutils
 import dbg, strformat, std/enumutils
-const asyncBackend {.strdefine.} = "none"
+const asyncBackend* {.strdefine.} = "none"
 when asyncBackend == "chronos":
   import ./chronos_adapter
+  export chronos_adapter
 else:
   import net, asyncnet, asyncdispatch
 
