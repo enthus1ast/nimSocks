@@ -11,7 +11,7 @@
 
 import nativesockets
 import types
-when asyncBackend != "chronos":
+when asyncBackend != "chronos" or ignoreAsyncBackend:
   import net, asyncnet, asyncdispatch
 
 proc doSocksHandshake*(
