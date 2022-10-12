@@ -9,8 +9,15 @@
 #    distribution, for details about the copyright.
 ## SOCKS4/4a/5 type definitions
 # {.push raises: [Defect].}
-import net, asyncnet, asyncdispatch, strutils
+import strutils
 import dbg, strformat, std/enumutils
+const asyncBackend* {.strdefine.} = "none"
+const ignoreAsyncBackend* {.booldefine.} = false
+when asyncBackend == "chronos" and not ignoreAsyncBackend:
+  import ./chronos_adapter
+  export chronos_adapter
+else:
+  import net, asyncnet, asyncdispatch
 
 type
   RESERVED =  distinct byte
@@ -241,10 +248,10 @@ proc parseHost(host: string): tuple[atyp: ATYP, data: seq[byte]] =
   try:
     ipaddr = host.parseIpAddress()
     case ipaddr.family
-    of IPv4:
+    of IpAddressFamily.IPv4:
       result.atyp = IP_V4_ADDRESS
       result.data = ipaddr.address_v4.toBytes()
-    of IPv6:
+    of IpAddressFamily.IPv6:
       result.atyp = IP_V6_ADDRESS
       result.data = ipaddr.address_v6.toBytes()
   except:

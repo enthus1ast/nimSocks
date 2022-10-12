@@ -9,8 +9,10 @@
 #    distribution, for details about the copyright.
 ## SOCKS4/4a/5 proxy client library
 
-import net, asyncdispatch, asyncnet, nativesockets
+import nativesockets
 import types
+when asyncBackend != "chronos" or ignoreAsyncBackend:
+  import net, asyncnet, asyncdispatch
 
 proc doSocksHandshake*(
   clientSocket: AsyncSocket,
@@ -37,7 +39,7 @@ proc doSocksHandshake*(
     if not (await clientSocket.recvSocksUserPasswordResponse(socksUserPasswordResponse)):
       return false # could not parse
 
-    if socksUserPasswordResponse.status.byte != SUCCEEDED.byte:
+    if socksUserPasswordResponse.status.byte != UserPasswordStatus.SUCCEEDED.byte:
       return false
 
     return true
@@ -52,7 +54,7 @@ proc doSocksConnect*(clientSocket: AsyncSocket, targetHost: string, targetPort: 
   await clientSocket.send($socksReq)
   var socksResp = SocksResponse()
   if not (await clientSocket.recvSocksResponse(socksResp)): return false
-  if socksResp.rep.byte != SUCCEEDED.byte: return false
+  if socksResp.rep.byte != REP.SUCCEEDED.byte: return false
   return true
 
 when isMainModule:
