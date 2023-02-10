@@ -310,12 +310,12 @@ proc parseDestAddress*(bytes: seq[byte], atyp: ATYP): string =
       result.add((ch).toHex())
       if idx != IP_V6_ADDRESS_LEN-1 and idx mod 2 == 1: result.add(':')
 
-proc recvByte*(client: AsyncSocket): Future[byte] {.async.} =
+proc recvByte*(client: AsyncSocket | Socket): Future[byte] {.multisync.} =
   # return (await client.recv(1))[0].byte # crash 18.1
   var dat = await client.recv(1) # TODO remove workaround someday
   return dat[0].byte
 
-proc recvBytes*(client: AsyncSocket, count: int): Future[seq[byte]] {.async.} =
+proc recvBytes*(client: AsyncSocket | Socket, count: int): Future[seq[byte]] {.multisync.} =
   return (await client.recv(count)).toSeq()
 
 proc recvNullTerminated*(client: AsyncSocket): Future[seq[byte]] {.async.} =
@@ -383,7 +383,7 @@ proc recvSocksRequest*(client:AsyncSocket, obj: SocksRequest): Future[bool] {.as
   obj.dst_port = (await client.recvByte, await client.recvByte)
   return true
 
-proc recvSocksResponse*(client:AsyncSocket, obj: SocksResponse): Future[bool] {.async.} =
+proc recvSocksResponse*(client:AsyncSocket | Socket, obj: SocksResponse): Future[bool] {.multisync.} =
   try:
     obj.version = toEnum[SOCKS_VERSION](await client.recvByte)
     obj.rep = toEnum[REP](await client.recvByte)
@@ -419,7 +419,7 @@ proc recvRequestMessageSelection*(client:AsyncSocket, obj: RequestMessageSelecti
   return true
 
 
-proc recvResponseMessageSelection*(client:AsyncSocket, obj: ResponseMessageSelection): Future[bool] {.async.} =
+proc recvResponseMessageSelection*(client:AsyncSocket | Socket, obj: ResponseMessageSelection): Future[bool] {.multisync.} =
   try:
     obj.version = toEnum[SOCKS_VERSION](await client.recvByte)
   except:
@@ -433,7 +433,7 @@ proc recvResponseMessageSelection*(client:AsyncSocket, obj: ResponseMessageSelec
   return true
 
 
-proc recvSocksUserPasswordResponse*(client:AsyncSocket, obj: SocksUserPasswordResponse): Future[bool] {.async.} =
+proc recvSocksUserPasswordResponse*(client:AsyncSocket | Socket, obj: SocksUserPasswordResponse): Future[bool] {.multisync.} =
   try:
     obj.authVersion = toEnum[AuthVersion](await client.recvByte)
     if obj.authVersion != AuthVersionV1: return false

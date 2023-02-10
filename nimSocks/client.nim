@@ -13,12 +13,12 @@ import net, asyncdispatch, asyncnet, nativesockets
 import types
 
 proc doSocksHandshake*(
-  clientSocket: AsyncSocket,
+  clientSocket: AsyncSocket | Socket,
   methods: set[AuthenticationMethod] = {NO_AUTHENTICATION_REQUIRED},
   username: string = "",
   password: string = "",
   version: SOCKS_VERSION = SOCKS_V5
-): Future[bool] {.async.} =
+): Future[bool] {.multisync.} =
   var req = newRequestMessageSelection(version, methods)
   await clientSocket.send($req)
 
@@ -37,7 +37,7 @@ proc doSocksHandshake*(
     if not (await clientSocket.recvSocksUserPasswordResponse(socksUserPasswordResponse)):
       return false # could not parse
 
-    if socksUserPasswordResponse.status.byte != SUCCEEDED.byte:
+    if socksUserPasswordResponse.status.byte != REP.SUCCEEDED.byte:
       return false
 
     return true
@@ -47,17 +47,61 @@ proc doSocksHandshake*(
   else: return false
 
 
-proc doSocksConnect*(clientSocket: AsyncSocket, targetHost: string, targetPort: Port) : Future[bool] {.async.} =
+proc doSocksConnect*(clientSocket: AsyncSocket | Socket, targetHost: string, targetPort: Port) : Future[bool] {.multisync.} =
   var socksReq = newSocksRequest(SocksCmd.CONNECT, targetHost, targetPort)
   await clientSocket.send($socksReq)
   var socksResp = SocksResponse()
   if not (await clientSocket.recvSocksResponse(socksResp)): return false
-  if socksResp.rep.byte != SUCCEEDED.byte: return false
+  if socksResp.rep.byte != REP.SUCCEEDED.byte: return false
   return true
 
 when isMainModule:
-  var sock = waitFor asyncnet.dial("127.0.0.1", Port 1080 ) # dial to the socks server
-  assert true == waitFor sock.doSocksHandshake(
+  import unittest
+
+  proc sendHttp(sock: AsyncSocket | Socket): Future[string] {.multisync.} =
+    # Then do normal socket operations
+    var hh = """GET / HTTP/1.1
+  Host: example.org
+
+    """
+    result = ""
+    echo hh
+    await sock.send(hh)
+    var buf = ""
+    while true:
+      buf = await sock.recv(1)
+      if buf == "": break
+      write stdout, buf
+      result.add buf
+      buf.setLen 0
+
+
+
+  suite "client":
+    test "async":
+      var sock = waitFor asyncnet.dial("127.0.0.1", Port 1080 ) # dial to the socks server
+      assert true == waitFor sock.doSocksHandshake(
+          username = "username",
+          password = "password",
+          version = SOCKS_V5,
+
+          # the "best" auth supported gets choosen by the server!
+          # methods={NO_AUTHENTICATION_REQUIRED, USERNAME_PASSWORD}
+          methods={NO_AUTHENTICATION_REQUIRED}
+          )
+
+      # instruct the proxy to connect to target host (by tcp)
+      assert true == waitFor sock.doSocksConnect("example.org", Port 80)
+      # assert true == waitFor sock.doSocksConnect("127.0.0.1", Port 8000)
+
+      echo "Send http..."
+
+      check "" != waitFor sendHttp(sock)
+
+    test "sync":
+
+      var sock = net.dial("127.0.0.1", Port 1080 ) # dial to the socks server
+      assert true == sock.doSocksHandshake(
       username = "username",
       password = "password",
       version = SOCKS_V5,
@@ -67,22 +111,8 @@ when isMainModule:
       methods={NO_AUTHENTICATION_REQUIRED}
       )
 
-  # instruct the proxy to connect to target host (by tcp)
-  assert true == waitFor sock.doSocksConnect("example.org", Port 80)
-  # assert true == waitFor sock.doSocksConnect("127.0.0.1", Port 8000)
+      # instruct the proxy to connect to target host (by tcp)
+      assert true == sock.doSocksConnect("example.org", Port 80)
+      # assert true == waitFor sock.doSocksConnect("127.0.0.1", Port 8000)
 
-  echo "Send http..."
-
-  # Then do normal socket operations
-  var hh = """GET / HTTP/1.1
-Host: example.org
-
-  """
-  echo hh
-  waitFor sock.send(hh)
-  var buf = ""
-  while true:
-    buf = waitFor sock.recv(1)
-    if buf == "": break
-    write stdout, buf
-    buf.setLen 0
+      check "" != sendHttp(sock)
